@@ -1,12 +1,19 @@
-library(glmnet)
-library(stringr)
-#setGeneric('cv.glmnet', function(x, y, ...) standardGeneric('cv.glmnet'))
+##' @importFrom glmnet cv.glmnet
+setGeneric('cv.glmnet', function(x, y, ...) standardGeneric('cv.glmnet'))
 
 contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
   contr.treatment(n, base, contrasts, sparse)
 }
 
-setMethod('cv.glmnet', signature='formula', function(x, y, weights, offset=NULL, lambda=NULL, type.measure, nfolds=10, foldid, grouped=TRUE, ...){
+##' Generic for cv.glmnet
+##'
+##' Accepts formula arguments
+##' @param x formula
+##' @param y data.frame or environment in which \code{x} is evaluated
+##' @param ... arguments passed to cv.glmnet
+##' @return see cv.glmnet
+##' @export
+setMethod('cv.glmnet', signature='formula', function(x, y, ...){
   family <- list(...)$family
   subset <- list(...)$subset
   if(is.null(family)) family <- 'gaussian'

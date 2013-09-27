@@ -1,8 +1,21 @@
 Package: SingleCellAnalysis
+Type: Package
 Title: Tools for Analysis of Zero-Inflated, Continuous Data
-Description: 
+Description: Utility functions for plotting and summarizing Single Cell
+    Expression Data
 Version: 0.1
-Authors@R: Andrew McDavid
-Depends: R (>= 3.0.1)
-License: GPL version >=3
+Author: Andrew McDavid <andrew.n.mcdavid@gmail.com>
+Maintainer: Andrew McDavid <andrew.n.mcdavid@gmail.com>
+Depends:
+    R (>= 3.0.1)
+License: GPL-3
 LazyData: true
+Imports:
+    glmnet,
+    stringr
+Collate:
+    'ZeroInflatedNetworks.R'
+    'glmformula.R'
+    'pairwisestat.R'
+    'panelfun.R'
+    'prelim.norm.R'

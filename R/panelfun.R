@@ -673,7 +673,18 @@ heatmap.3 <- function(x,
     invisible(retval)
 }
 
-
+##' Plot a heatmap of a SingleCellAssay expression matrix
+##'
+##' Plot a heatmap of a SingleCellAssay expression matrix (eg, from calling exprs).
+##' Optionally cluster and label rows by rowFactor, columns by colFactor, and/or sort the expression matrix by rowFactor/colFactor.
+##' @param ee.sc expression matrix 
+##' @param rowFactor named list of character vectors to be used as a labelling color schema for the rows.
+##' @param cluster boolean. Apply hclust to rows and columns.
+##' @param order.by.factor Sort expression matrix by rowFactors and colFactors.  If cluster is TRUE than cluster within rowFactor/colFactor.
+##' @param colFactor named list of character vectors to be used as a labelling color schema for the columns.
+##' @param ... passed to heatmap.2
+##' @return prints plot to current graphic device
+##' @export
 singleCellHeat <- function(ee.sc, rowFactor, cluster=TRUE, order.by.factor=!cluster, colFactor, ...){
   if(cluster){
 rowD <- as.dendrogram(hclust(dist(ee.sc)))
@@ -745,21 +756,4 @@ heatmap.3(ee.sc, Colv=colD, col=topo.colors, trace='none', RowSideColors=RowSide
 heatmap.3(ee.sc, col=topo.colors, trace='none', RowSideColors=RowSideColors, ColSideColors=ColSideColors, ...)
 }
     )
-}
-##' Plot NanoString log Counts vs cluster ID
-##'
-##' Histogram of log Counts by primerid, colored by cluster
-##' @param M output from thresholdNanostring, debug=TRUE
-##' @param densitiesFromThres output from thresholdNanostring, debug=TRUE
-##' @param primerids character vector of primerids to plot
-##' @return ggplot object
-##' @author andrew
-plot.threshold <- function(M, densitiesFromThres, primerids){
-    sub <- subset(M, primerid %in% primerids)
-sub <- ddply(sub, .(primerid), function(x){
-    x$den.est <- densitiesFromThres[[x$primerid[1]]](x$lCount)
-    x
-})
-p <- ggplot(sub, aes(x=lCount, fill=clusterID)) + geom_histogram(aes(y=..density..)) + facet_wrap(~primerid) + geom_line(aes(x=lCount, y=den.est))+ylim(0, 1)
-    p
 }
