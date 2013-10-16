@@ -1,0 +1,4 @@
+export(chisq.pairwise)
+export(singleCellHeat)
+exportMethods(cv.glmnet)
+importFrom(glmnet,cv.glmnet)

@@ -131,6 +131,26 @@ chisq.pairwise <- function (sc) {
   chi2
 }
 
+setClass('PairwisePearson', contains='matrix', representation=representation(nsamp='numeric', npos='numeric'), validity=function(object){
+    ncol(object@.Data)==nrow(object@.Data) && ncol(object@.Data) == length(object@npos)
+})
+
+pearson.pairwise <- function(sc, diagonals='zero'){
+    if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
+ r2 <- cor(exprs(sc)>0)
+ diag(r2) <- 0
+    new('PairwisePearson', r2, nsamp=nrow(sc), npos=apply(exprs(sc)>0, 2, sum))
+
+}
+
+test.pearson.pairwise <- function(pp1, pp2){
+    fisher.z <- function(r) .5 * log(1+r)/log(1-r)
+    z1 <- fisher.z(pp1)
+    z2 <- fisher.z(pp2)
+    zdiff <- (z2-z1)/sqrt(sum(1/(pp1@nsamp-3), 1/(pp2@nsamp-3)))
+    diag(zdiff) <- 0
+    zdiff
+}
 
 chisq.stim <- function (scr3, stim) {
   ng = ncol(scr3)

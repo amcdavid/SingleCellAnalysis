@@ -1,0 +1,25 @@
+\name{chisq.pairwise}
+\alias{chisq.pairwise}
+\title{Chi-square tests of independence for each pair of genes}
+\usage{
+  chisq.pairwise(sc)
+}
+\arguments{
+  \item{sc}{SingleCellAssay, on a thresholded (et) layer}
+}
+\value{
+  matrix of chisq test statistics
+}
+\description{
+  Conduct a chi-square tests of independence for each pair
+  of genes. The binary (expressed/not) values are used to
+  build the contingency tables. The chi-square test
+  statistics for each pair of genes is returned, with
+  zeroes placed along the main diagonal. Significance could
+  be assessed (in large samples) by comparison to a
+  chi-square distribution with 1-dof.
+}
+\author{
+  andrew
+}
+
