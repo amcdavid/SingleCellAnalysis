@@ -135,16 +135,44 @@ setClass('PairwisePearson', contains='matrix', representation=representation(nsa
     ncol(object@.Data)==nrow(object@.Data) && ncol(object@.Data) == length(object@npos)
 })
 
-pearson.pairwise <- function(sc, diagonals='zero'){
+##' Calculate pairwise correlation coefficient
+##'
+##' Calculates the correlation coefficient between each pair of genes on the
+##' dichotomous level.
+##' The diagonal is set to zero to avoid having the fisher transform blow up.
+##' @param sc SingleCellAssay object
+##' @param diagonals currently ignored
+##' @param partial adjust for ngeneson
+##' @return a PairwisePearson object, which is a matrix with slots "nsamp" giving the number of cells the cor. coef. were calculated over, "npos" giving the number of expressed cells in each gene.
+##' @import SingleCellAssay
+##' @export
+pearson.pairwise <- function(sc, diagonals='zero', partial=FALSE){
     if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
- r2 <- cor(exprs(sc)>0)
+    ee <- (exprs(sc)>0)*1
+    ngeneson <- apply(ee, 1, mean)
+    if(partial){
+        ee <- aaply(ee, 2, function(x){
+            resid(glm(x~ngeneson, family='binomial'))
+                  })
+        ee <- t(ee)
+    }
+ r2 <- cor(ee)
  diag(r2) <- 0
     new('PairwisePearson', r2, nsamp=nrow(sc), npos=apply(exprs(sc)>0, 2, sum))
-
 }
 
+fisher.z <- function(r) .5 * (log(1+r)-log(1-r))
+inv.fisher <- function(z) (exp(2*z)-1)/(1+exp(2*z))
+
+##' Generate a matrix of z-statistics comparing two PairwisePearson objects
+##'
+##' 
+##' @param pp1 First PairwisePearson object
+##' @param pp2 Second PairwisePearson object
+##' @return matrix of z-statistics
+##' @importFrom abind abind
+##' @export
 test.pearson.pairwise <- function(pp1, pp2){
-    fisher.z <- function(r) .5 * log(1+r)/log(1-r)
     z1 <- fisher.z(pp1)
     z2 <- fisher.z(pp2)
     zdiff <- (z2-z1)/sqrt(sum(1/(pp1@nsamp-3), 1/(pp2@nsamp-3)))
@@ -152,20 +180,122 @@ test.pearson.pairwise <- function(pp1, pp2){
     zdiff
 }
 
-chisq.stim <- function (scr3, stim) {
-  ng = ncol(scr3)
-  gs = vector(length=ng)
-  tt = list(exp=0)
-  for(g in 1:ng){
-    tab = table(scr3[,g], stim)
-    if(all(dim(tab)==c(2, 2))){
-      tt = fisher.test(scr3[,g], stim) 
-      gs[g] = tt$p  
-    }
-     else{
-       gs[g] = 1
-     }
-    }
-  return(gs)
+ci.pearson.pairwise <- function(pairwisePearson, ci=.95, method='asymptotic'){
+    z <- fisher.z(pairwisePearson)
+    norm.q <- qnorm((1-ci)/2, lower.tail=FALSE)/sqrt(pairwisePearson@nsamp-3)
+    ci.lower <- inv.fisher(z-norm.q)
+    ci.upper <- inv.fisher(z+norm.q)
+    abind(lower=ci.lower, est=pairwisePearson@.Data, upper=ci.upper, along=0)
 }
 
+setClass('PairwiseOddsratio', contains='matrix', representation=representation(genes='character'))
+
+setClass('PairwiseOddsWithHook', contains='PairwiseOddsratio', representation=representation(hook='matrix'))
+
+##' Calculate pairwise gene odds ratios
+##'
+##' Calculates odds ratios between each pair of genes on the
+##' dichotomous level.
+##' @param sc SingleCellAssay object
+##' @param partial a character vector of terms to adjust for.  \code{cData(sc)} is used as a model frame.  If contains 'ngeneson' and it is not present in \code{cData} then it will be calculated.
+##' @return PairwiseOddsRatio class, with slots \code{fits} (2-D list of fit) and \code{genes} (character vector of gene names).
+##' @import SingleCellAssay
+##' @importFrom logistf logistf
+##' @export
+oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, lm.hook){
+    if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
+    ee <- (exprs(sc)>0)*1
+    ## if(!missing(Formula)){
+    ##     cd <- cData(sc)
+    ##     if(str_detect(as.character(Formula)[2], 'ngeneson') && !('ngeneson'%in% names(cData(sc))) ){
+    ##         ngeneson <- apply(ee, 1, mean)
+    ##         cd$ngeneson <- ngeneson
+    ##     }
+    ##     mf <- model.frame(Formula, cd)
+    ## } else{
+    ##     mf <- data.frame('(Intercept)'=rep(1, nrow(ee)))
+    ## }
+
+    mf <- cData(sc)
+
+   genes <- fData(sc)$primerid
+   freqs <- freq(sc)
+   fits <- vector(mode='list', length=length(genes)^2)
+   dim(fits) <- c(length(genes), length(genes))
+   dimnames(fits) <- list(primerid1=genes, primerid2=genes)
+
+    if(!missing(lm.hook)){
+       hook <- fits
+       dim(hook) <- dim(fits)
+       dimnames(hook) <- dimnames(fits)
+   }
+
+
+   EPS <- 10000 * .Machine$double.eps
+   for(i in seq_along(genes)){
+       if(freqs[i] < surrenderFreq || freqs[i] > 1-surrenderFreq) next
+
+       mf.new <- cbind(mf, logOR.primer2=ee[,i])
+       Xnew <- model.matrix(Formula, mf.new)
+
+       
+       for(j in setdiff(seq_along(genes), i)){
+           if(freqs[j]<surrenderFreq || freqs[j]>1-surrenderFreq) next
+           tt <- try({
+               if(useFirth){
+                   ll <- logistf(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
+                   vcov <- vcov(ll)
+                   rownames(vcov) <- colnames(vcov) <- names(coef(ll))
+                   ll$converged <- TRUE
+                   ll$boundary <- FALSE
+               } else{
+                   ll <- glm.fit(Xnew, ee[,j], family=binomial())
+                   ll$boundary <- ll$boundary | any((ll$fitted < EPS) | (ll$fitted > 1-EPS))
+                   Ahat <- crossprod(Xnew*ll$weights, Xnew)
+                   trA <- sum(diag(Ahat))
+                   p <- ncol(Ahat)
+                   vcov <- solve(Ahat)
+               }
+               
+           })
+           if(!inherits(tt, 'try-error')){
+               fits[[i,j]] <- list(coef=coef(ll), vcov=vcov, converged=ll$converged, boundary=ll$boundary, primer1=genes[i], primer2=genes[j])
+               if(!missing(lm.hook))
+                   hook[[i, j]] <- lm.hook(ll)
+           }
+       }
+   }
+
+    if(!missing(lm.hook)){
+        return(new('PairwiseOddsWithHook', fits, genes=genes, hook=hook))
+    } else{
+    return(new('PairwiseOddsratio', fits, genes=genes))
+}
+}
+
+safeSubset <- function(list, index){
+    !is.null(list[[index]]) && list[[index]]
+}
+
+setGeneric('coef')
+setMethod(coef, 'PairwiseOddsratio', function(object, onlyConverged=FALSE, se=FALSE){
+    tmp <- lapply(object, function(x) x[['coef']])
+    tmp.names <- expand.grid(primer1=object@genes, primer2=object@genes, stringsAsFactors=FALSE)
+    converged <- rep(TRUE, length(tmp))
+    if(onlyConverged){
+        converged <- sapply(object, safeSubset, 'converged') & !sapply(object, safeSubset, 'boundary')
+    }
+    empty <- sapply(tmp, is.null) | !converged
+    m <- do.call(rbind, tmp[!empty])
+    tmp.names <- tmp.names[!empty,]
+        if(se){
+        se.list <- lapply(object, function(x) sqrt(diag(x[['vcov']])))
+        se.list <- se.list[!empty]
+        se.bind <- do.call(rbind, se.list)
+        res <- cbind(m, se=se.bind, tmp.names)
+    } else{
+    res <- cbind(m, tmp.names)
+}
+    return(res)
+
+ })

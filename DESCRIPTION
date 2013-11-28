@@ -12,10 +12,17 @@ License: GPL-3
 LazyData: true
 Imports:
     glmnet,
-    stringr
+    stringr,
+    SingleCellAssay (>= 0.71),
+    randomForest,
+    gplots,
+    logistf,
+    RColorBrewer,
+    igraph
 Collate:
     'ZeroInflatedNetworks.R'
     'glmformula.R'
     'pairwisestat.R'
     'panelfun.R'
     'prelim.norm.R'
+    'ngeneson.R'

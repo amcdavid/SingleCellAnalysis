@@ -1,0 +1,25 @@
+\name{oddsratio.pairwise}
+\alias{oddsratio.pairwise}
+\title{Calculate pairwise gene odds ratios}
+\usage{
+  oddsratio.pairwise(sc, partial, surrenderFreq = 0.05,
+    useFirth = FALSE)
+}
+\arguments{
+  \item{sc}{SingleCellAssay object}
+
+  \item{partial}{a character vector of terms to adjust for.
+  \code{cData(sc)} is used as a model frame.  If contains
+  'ngeneson' and it is not present in \code{cData} then it
+  will be calculated.}
+}
+\value{
+  PairwiseOddsRatio class, with slots \code{fits} (2-D list
+  of fit) and \code{genes} (character vector of gene
+  names).
+}
+\description{
+  Calculates odds ratios between each pair of genes on the
+  dichotomous level.
+}
+

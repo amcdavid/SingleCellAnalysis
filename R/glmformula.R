@@ -1,5 +1,5 @@
 ##' @importFrom glmnet cv.glmnet
-setGeneric('cv.glmnet', function(x, y, ...) standardGeneric('cv.glmnet'))
+setGeneric('cv.glmnet')#, function(x, y, ...) standardGeneric('cv.glmnet'))
 
 contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
   contr.treatment(n, base, contrasts, sparse)
@@ -25,10 +25,6 @@ setMethod('cv.glmnet', signature='formula', function(x, y, ...){
   }
   
   response <- model.response(mf)
-  opar <- options('contrasts')
-  npar <- opar
-  npar[[1]][1] <- 'contr.dummy'
-  options(npar)
   mm <- model.matrix(x, mf)
   options(opar)
   if(family=='binomial')
@@ -66,23 +62,19 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   idx <- do.call(c, idx)
   df <- df[,idx]
  if('interaction' %in% predictor){
-  form <- sprintf('~ (%s)^2 + 0', paste(names(df), collapse="+"))
+  form <- sprintf('~ (%s)^2', paste(names(df), collapse="+"))
 } else{
- form <- sprintf('~ %s + 0', paste(names(df), collapse="+"))
+ form <- sprintf('~ %s', paste(names(df), collapse="+"))
 } 
   resp <- as.factor(cData(sca)[,comparison])
   fam <- 'binomial'
   if(length(levels(resp))>2)
     fam <- 'multinomial'
 
-  opar <- options('contrasts')
-  npar <- opar
-  npar[[1]][1] <- 'contr.dummy'
-  options(npar)
   if('user' %in% predictor){
-      mm <- user.mm(df)
+      mm <- user.mm(df)[,-1]
   } else{
-  mm <- model.matrix(formula(form), df)
+  mm <- model.matrix(formula(form), df)[, -1]
 }
   if(!missing(addn)){
   mm <- cbind(mm, addn)
@@ -143,7 +135,7 @@ glmMisclass <- function(glmsca, alt.fit, groups, s='lambda.min'){
 summarizeCoef <- function(glmsca, s='lambda.min'){
   co <- coef(glmsca$cv.fit, s=s)
   names(co) <- levels(glmsca$response)
-  coefmat <- .sparseGlmToMat(co, subset=value>0)
+  coefmat <- .sparseGlmToMat(co)
   traj <- .sparseGlmToMat(glmsca$cv.fit$glmnet.fit$beta, fun.aggregate=function(x){sum(x>0)})
   class(coefmat) <- c('CoefficientMatrix', class(coefmat))
   origcandidate <- str_split_fixed(coefmat$predictor, '[.][dc]$', 2)[,1]
