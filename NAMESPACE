@@ -1,4 +1,5 @@
 export(chisq.pairwise)
+export(fitZifNetwork)
 export(oddsratio.pairwise)
 export(pearson.pairwise)
 export(singleCellHeat)

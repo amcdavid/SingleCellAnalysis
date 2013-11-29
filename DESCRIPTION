@@ -3,7 +3,7 @@ Type: Package
 Title: Tools for Analysis of Zero-Inflated, Continuous Data
 Description: Utility functions for plotting and summarizing Single Cell
     Expression Data
-Version: 0.1
+Version: 0.11
 Author: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Maintainer: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Depends:
@@ -18,7 +18,8 @@ Imports:
     gplots,
     logistf,
     RColorBrewer,
-    igraph
+    igraph,
+    abind
 Collate:
     'ZeroInflatedNetworks.R'
     'glmformula.R'
@@ -26,3 +27,4 @@ Collate:
     'panelfun.R'
     'prelim.norm.R'
     'ngeneson.R'
+    'GroupLassoNetworks.R'

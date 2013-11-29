@@ -9,13 +9,12 @@
 ##' @param additive.effects character vector, possibly using formula syntax of columns from \code{cData(sc)} to be included as unpenalized terms.
 ##' @param min.freq genes below this frequency are excluded as predictors and dependent variables
 ##' @param gene.predictors one of 'zero.inflated' or 'hurdle'.  See details.
-##' @param alpha elastic net mixing parameter, set to 1 for pure lasso.
 ##' @param precenter How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 ##' When precenter=TRUE, cv.glmnet will not standardize.
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
-fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', alpha=1, precenter=TRUE, precenter.fun=scale, ...){
+fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, ...){
     gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
     sub <- sc[, freq(sc)>min.freq]
     genes <- fData(sub)$primerid
@@ -58,7 +57,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         penalty.factor<-rep(c(0, 1), times=c(additive.dim, genes.appear*length(genes.diff)))
         if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
         tt <- try({
-            fit.dichot <- cv.glmnet(this.model, y.dichot, family='binomial', alpha=alpha, penalty.factor=penalty.factor, standardize=!precenter, ...)
+            fit.dichot <- cv.glmnet(this.model, y.dichot, family='binomial', penalty.factor=penalty.factor, standardize=!precenter, ...)
             fits[[i, 'dichotomous']] <- if(fit.dichot$glmnet.fit$jerr==-1) NULL else fit.dichot
             lambda[i,'dichotomous'] <- fit.dichot$lambda.min[1]
             nobs.d <- nrow(this.model)
@@ -71,7 +70,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             nobs[i, 'continuous'] <- nobs.c 
             sigma[i, 'continuous'] <- sigma.y
             wy <- nobs.c/(nobs.d*sigma.y)
-            fit.real <- cv.glmnet(this.model[y.dichot,], y.real, family='gaussian', alpha=alpha, penalty.factor=penalty.factor, standardize=!precenter, ...)
+            fit.real <- cv.glmnet(this.model[y.dichot,], y.real, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
             ## set things to null if we didn't converge rather than return empty fit
             fits[[i, 'continuous']] <- if(fit.real$glmnet.fit$jerr==-1) NULL else fit.real
             lambda[i,'continuous'] <- fit.real$lambda.min[1]
@@ -231,6 +230,19 @@ color <- function(attr, palette=brewer.pal, ...){
     structure(attr.col, attr=attr)
 }
 
+##' Turn an object from fitZifNetwork into a igraph object
+##'
+##' 
+##' @param zifFit 
+##' @param constraint 
+##' @param Vattr 
+##' @param Eattr 
+##' @param collapse 
+##' @param weight 
+##' @param ... passed to getZifNetwork
+##' @return igraph object, with attributes
+##' @import igraph
+##' @importFrom RColorBrewer brewer.pal
 layoutZifNetwork <- function(zifFit, constraint, Vattr=NULL, Eattr=NULL, collapse=TRUE, weight=FALSE, ...){
     if(weight && collapse) stop("Cannot provide both 'weight' and 'collapse'")
     if(!collapse && !is.null(Eattr)) stop("Cannot provide edge attributes when 'collapse = FALSE'")

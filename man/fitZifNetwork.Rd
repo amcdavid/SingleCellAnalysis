@@ -1,26 +1,44 @@
 \name{fitZifNetwork}
 \alias{fitZifNetwork}
-\title{Fit Meinhousen-Buhlmann}
+\title{Fit Meinhousen-Buhlmann to a SingleCellAssay object}
 \usage{
   fitZifNetwork(sc, additive.effects, min.freq = 0.05,
     gene.predictors = "zero.inflated", alpha = 1,
-    precenter = TRUE)
+    precenter = TRUE, precenter.fun = scale, ...)
 }
 \arguments{
-  \item{sc}{}
+  \item{sc}{SingleCellAssay object on a thresholded layer}
 
-  \item{additive.effects}{}
+  \item{additive.effects}{character vector, possibly using
+  formula syntax of columns from \code{cData(sc)} to be
+  included as unpenalized terms.}
 
-  \item{min.freq}{}
+  \item{min.freq}{genes below this frequency are excluded
+  as predictors and dependent variables}
 
-  \item{gene.predictors}{}
+  \item{gene.predictors}{one of 'zero.inflated' or
+  'hurdle'.  See details.}
 
-  \item{alpha}{}
+  \item{alpha}{elastic net mixing parameter, set to 1 for
+  pure lasso.}
+
+  \item{precenter}{How should centering/scaling be done
+  with respect to continuous regressions.  TRUE if
+  centering should be done with respect to all cells; FALSE
+  if centering should be done only with respect to
+  expressed cells When precenter=TRUE, cv.glmnet will not
+  standardize.}
 }
 \value{
   2-D list of cv.glmnet objects with attributes
 }
 \description{
-  .. content for \details{} ..
+  Regresses the dichotomous and continuous components of
+  each gene in \code{sc} on every other gene.
+  \code{additive.effects} from \code{cData(sc)} are
+  included unpenalized. Currently only
+  \code{gene.predictors} as 'zero.inflated' is supported.
+  ... is passed along to cv.glmnet, see documentation
+  there.
 }
 

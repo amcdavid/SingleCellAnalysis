@@ -2,8 +2,8 @@
 \alias{oddsratio.pairwise}
 \title{Calculate pairwise gene odds ratios}
 \usage{
-  oddsratio.pairwise(sc, partial, surrenderFreq = 0.05,
-    useFirth = FALSE)
+  oddsratio.pairwise(sc, Formula, surrenderFreq = 0.05,
+    useFirth = FALSE, lm.hook)
 }
 \arguments{
   \item{sc}{SingleCellAssay object}
