@@ -84,7 +84,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
 
 
-fortify.zifnetwork <- function(fits, constr.max=1){
+fortify.zifnetwork <- function(fits, lc.range, ld.range){
     sigma <- rename(cast(melt(attr(fits, 'sigma')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
     null <- attr(fits, 'nobs')[,1]==0
     cv.fit <- fits[!null,]
@@ -92,6 +92,12 @@ fortify.zifnetwork <- function(fits, constr.max=1){
     
     grp.norm.list <- out <- vector(mode='list', length=nrow(cv.fit))
     names(grp.norm.list) <- names(out) <- genes
+
+    if(length(lc.range)!=2 || length(ld.range) != 2) stop("'lc.range' and 'ld.range' must both be length 2")
+    
+    knots.c <- seq(from=lc.range[1], to=lc.range[2], length=20)
+    knots.d <- seq(from=ld.range[1], to=ld.range[2], length=20)
+    
     for(g in seq_len(nrow(cv.fit))){
         twofit <- list(cv.fit[[g,1]]$glmnet.fit, cv.fit[[g,2]]$glmnet.fit)
         nobs.d <- twofit[[1]]$nobs
@@ -103,44 +109,47 @@ fortify.zifnetwork <- function(fits, constr.max=1){
         if(fixed.d != fixed.c) warning('mismatch between length of fixed predictors')
         norm.d <- apply(twofit[[1]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
         norm.c <- apply(twofit[[2]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.c) ])))
-        
-        knots <- seq(from=0, to=constr.max, length=20)
-        ndev.d <- approx(norm.d, ndev.d, knots, rule=2)$y
-        ndev.c <- approx(norm.c, ndev.c, knots, rule=2)$y
-        l.d <- approx(norm.d, twofit[[1]]$lambda, knots, rule=2)$y
-        l.c <- approx(norm.c, twofit[[2]]$lambda, knots, rule=2)$y
 
-        coef.d <- as.matrix(coef(twofit[[1]], s=l.d))
-        coef.c <- as.matrix(coef(twofit[[2]], s=l.c))
-        things.to.estimate <- c('grp.l1', 'comb.l1', 'ndev.comb')
-        comb.norm <- array(NA, dim=c(ncol(coef.d), ncol(coef.c), length(things.to.estimate)), dimnames=list(l.d=l.d, l.c=l.c, estimand=things.to.estimate))
+        l.d <- twofit[[1]]$lambda
+        l.c <- twofit[[2]]$lambda
         
-        fixed.plus.intercept <- fixed.c+1
-        for(i in seq_len(ncol(coef.d))){
-            for(j in seq_len(ncol(coef.c))){
-                cd <- coef.d[-seq_len(fixed.plus.intercept),i]
-                cc <- coef.c[-seq_len(fixed.plus.intercept),j]
-                comb.norm[i,j, 'grp.l1'] <- sum(sqrt(cc^2 + cd^2))
-                comb.norm[i, j, 'comb.l1'] <- sum(abs(cc)+abs(cd))
-                comb.norm[i,j,'ndev.comb'] <- ndev.d[i]+ndev.c[j]
-            }
-        }
-        grp.norm.list[[g]] <-cbind(cast(melt(comb.norm), ...~estimand, fun.aggregate='[', x=1), primerid=genes[g], stringsAsFactors=FALSE) #fun.aggregate='[' because we might have duplicate lambda is we're on the boundary
+
+        norm.d <- approx(l.d, norm.d, knots.d, rule=2)$y
+        norm.c <- approx(l.c, norm.c, knots.c, rule=2)$y
+        ndev.d <- approx(l.d, ndev.d, knots.d, rule=2)$y
+        ndev.c <- approx(l.c, ndev.c, knots.c, rule=2)$y
+
+        ## coef.d <- as.matrix(coef(twofit[[1]], s=l.d))
+        ## coef.c <- as.matrix(coef(twofit[[2]], s=l.c))
+        ## things.to.estimate <- c('grp.l1', 'comb.l1', 'ndev.comb')
+        ## comb.norm <- array(NA, dim=c(ncol(coef.d), ncol(coef.c), length(things.to.estimate)), dimnames=list(l.d=l.d, l.c=l.c, estimand=things.to.estimate))
+        
+        ## fixed.plus.intercept <- fixed.c+1
+        ## for(i in seq_len(ncol(coef.d))){
+        ##     for(j in seq_len(ncol(coef.c))){
+        ##         cd <- coef.d[-seq_len(fixed.plus.intercept),i]
+        ##         cc <- coef.c[-seq_len(fixed.plus.intercept),j]
+        ##         comb.norm[i,j, 'grp.l1'] <- sum(sqrt(cc^2 + cd^2))
+        ##         comb.norm[i, j, 'comb.l1'] <- sum(abs(cc)+abs(cd))
+        ##         comb.norm[i,j,'ndev.comb'] <- ndev.d[i]+ndev.c[j]
+        ##     }
+        ## }
+        ## grp.norm.list[[g]] <-cbind(cast(melt(comb.norm), ...~estimand, fun.aggregate='[', x=1), primerid=genes[g], stringsAsFactors=FALSE) #fun.aggregate='[' because we might have duplicate lambda is we're on the boundary
 
         
-        nnz.d <- approx(norm.d, twofit[[1]]$df-fixed.d, knots, method='constant', rule=2)$y
-        nnz.c <- approx(norm.c, twofit[[2]]$df-fixed.c, knots, method='constant', rule=2)$y
-        norm.d <- approx(norm.d, norm.d, knots, rule=2)$y
-        norm.c <- approx(norm.c, norm.c, knots, rule=2)$y
+        nnz.d <- approx(l.d, twofit[[1]]$df-fixed.d, knots.d, method='constant', rule=2)$y
+        nnz.c <- approx(l.c, twofit[[2]]$df-fixed.c, knots.c, method='constant', rule=2)$y
+        l.d <- approx(l.d, l.d, knots.d, rule=2)$y
+        l.c <- approx(l.c, l.c, knots.c, rule=2)$y
 
         #data.frame(norm=knots, ndev1, ndev2, l1, l2)
-        out[[g]] <- data.frame(norm.d, norm.c, nnz.d, nnz.c, l.d, l.c, ndev.d, ndev.c, nobs.d, nobs.c, primerid=genes[g])
+        out[[g]] <- data.frame(norm.d, norm.c, nnz.d, nnz.c, knots.d, knots.c, l.d, l.c, ndev.d, ndev.c, nobs.d, nobs.c, primerid=genes[g])
     }
     fortified <- merge(sigma, do.call(rbind, out))
-    norm.grid <- do.call(rbind, grp.norm.list)
+    #norm.grid <- do.call(rbind, grp.norm.list)
     
     
-    list(fortified=fortified, norm.grid=norm.grid)
+    list(fortified=fortified, norm.grid=NA)
         
         }
 
@@ -153,12 +162,12 @@ fortify.zifnetwork <- function(fits, constr.max=1){
 ##' When type = 'comb.l1', ditto but with the regular l1 norm being constrained.
 ##' When type = 'lambda.min' lambda is selected to be 'constraint' times the lambda.min determined by cross validation.
 ##' @param listOfFits output from fitZifNetwork
-##' @param constraint a constraint, which will be translated into the regularization tuning parameter lambda for each regression
+##' @param l.c continuous lambda value
+##' @param l.d discrete lambda value
 ##' @param collapse should a collapsed, symmetrized, boolean adjacency matrix be returned?
-##' @param type the type of constraint imposed
-##' @param norm.grid optional output from fortify.zifnetwork to speed calculation
+##' @param constraint a constraint, which will be translated into the regularization tuning parameter lambda for each regression
 ##' @return an array
-getZifNetwork <- function(listOfFits, constraint=1, collapse=FALSE, type='grp.l1', norm.grid){
+getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE){
     genes <- dimnames(listOfFits)[['primerid']]
     gene.predictors <- attr(listOfFits, 'gene.predictors')
     additive.dim <- attr(listOfFits, 'additive.dim')
@@ -170,23 +179,8 @@ getZifNetwork <- function(listOfFits, constraint=1, collapse=FALSE, type='grp.l1
          out <- array(0, c(length(genes), length(genes), 2), dimnames=list(genes, genes, c('di', 'cont')))
          genes.appear <- 1
     }
-    if(missing(norm.grid))
-        norm.grid <- fortify.zifnetwork(listOfFits)$norm.grid
 
     ## Genes X component
-    if(type != 'lambda.min'){
-    min.dev.per.constr <- ddply(norm.grid, ~primerid, function(ply){
-        lessThanConstrRow <- ply[,type]<constraint
-        constr <- ply[lessThanConstrRow,]
-        constr[which.min( constr[,'ndev.comb']),]
-    })
-
-    lambda.by.comp <- within(min.dev.per.constr, {
-        dichotomous <- l.d
-        continuous <- l.c
-    })
-
-}
 
     lambdaList <- attr(listOfFits, 'lambda')
     
@@ -195,11 +189,7 @@ getZifNetwork <- function(listOfFits, constraint=1, collapse=FALSE, type='grp.l1
         genes.diff <- setdiff(genes, this.gene)
         for(j in seq_len(dim(listOfFits)[2])){
             this.comp <- dimnames(listOfFits)[[2]][j]
-            if(type =='lambda.min'){
-                this.lambda <- constraint+lambdaList[i,j]
-            } else{
-                this.lambda <- subset(lambda.by.comp, primerid==this.gene)[, this.comp]
-            }
+            this.lambda <- if(this.comp =='continuous') l.c else l.d
             if(!is.null(listOfFits[[i, j]]) && length(this.lambda)>0){
 
                 ## kill intercept
@@ -243,11 +233,11 @@ color <- function(attr, palette=brewer.pal, ...){
 ##' @return igraph object, with attributes
 ##' @import igraph
 ##' @importFrom RColorBrewer brewer.pal
-layoutZifNetwork <- function(zifFit, constraint, Vattr=NULL, Eattr=NULL, collapse=TRUE, weight=FALSE, ...){
+layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weight=FALSE, ...){
     if(weight && collapse) stop("Cannot provide both 'weight' and 'collapse'")
     if(!collapse && !is.null(Eattr)) stop("Cannot provide edge attributes when 'collapse = FALSE'")
     
-    adj <- SingleCellAnalysis:::getZifNetwork(FITS, constraint, collapse=collapse, ...)
+    adj <- SingleCellAnalysis:::getZifNetwork(FITS, collapse=collapse, ...)
     if(!collapse){
         stopifnot(length(dim(adj))==3)
         ## Symmetrize, get support and assign a bitmask to the layer
