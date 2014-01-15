@@ -14,8 +14,9 @@
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
-fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, ...){
+fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', ...){
     gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
+    response <- match.arg(response, c('hurdle', 'zero.inflated'))
     sub <- sc[, freq(sc)>min.freq]
     genes <- fData(sub)$primerid
 
@@ -40,14 +41,15 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
     ## Holds output from glmnet
     fits <- vector(mode='list', length=2*length(genes))
-    sigma <- nobs <- lambda <- vector(mode='numeric', length=2*length(genes))
-    dim(sigma) <- dim(nobs) <- dim(lambda) <- dim(fits) <- c(length(genes), 2)
-    dimnames(sigma) <- dimnames(nobs) <- dimnames(lambda) <- dimnames(fits) <- list(primerid=genes, type=c('dichotomous', 'continuous'))
+    sigma <- nobs <- lambda <- lambda0 <- rep(NA, length=2*length(genes))
+    dim(sigma) <- dim(nobs) <- dim(lambda) <- dim(lambda0) <- dim(fits) <- c(length(genes), 2)
+    dimnames(sigma) <- dimnames(nobs) <- dimnames(lambda) <- dimnames(lambda0) <- dimnames(fits) <- list(primerid=genes, type=c('dichotomous', 'continuous'))
 
     ## Begin loop thru genes
     for(i in seq_along(genes)){
         this.gene <- fData(sub)$primerid[i]
-        y.dichot <- exprs(sub)[,i]>0
+        y.zif <- exprs(sub)[,i]
+        y.dichot <- y.zif>0
         y.real <- exprs(sub)[,i][y.dichot]
         genes.diff <- setdiff(genes, this.gene)
         ## remove response gene from design
@@ -57,9 +59,15 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         penalty.factor<-rep(c(0, 1), times=c(additive.dim, genes.appear*length(genes.diff)))
         if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
         tt <- try({
+            if(response == 'hurdle'){
             fit.dichot <- cv.glmnet(this.model, y.dichot, family='binomial', penalty.factor=penalty.factor, standardize=!precenter, ...)
-            fits[[i, 'dichotomous']] <- if(fit.dichot$glmnet.fit$jerr==-1) NULL else fit.dichot
+        } else{
+            fit.dichot <- cv.glmnet(this.model, y.zif, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
+            fit.real <- fit.dichot
+            }
+            fits[[i, 'dichotomous']] <- if(fit.dichot$glmnet.fit$jerr==-1 || min(fit.dichot$glmnet.fit$lambda) > 1e2 ) NULL else fit.dichot
             lambda[i,'dichotomous'] <- fit.dichot$lambda.min[1]
+            lambda0[i, 'dichotomous'] <- fit.dichot$glmnet.fit$lambda[1]
             nobs.d <- nrow(this.model)
             nobs[i, 'dichotomous'] <- nobs.d
             my <- mean(y.dichot)
@@ -70,23 +78,24 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             nobs[i, 'continuous'] <- nobs.c 
             sigma[i, 'continuous'] <- sigma.y
             wy <- nobs.c/(nobs.d*sigma.y)
-            fit.real <- cv.glmnet(this.model[y.dichot,], y.real, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
+            if(response=='hurdle') fit.real <- cv.glmnet(this.model[y.dichot,], y.real, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
             ## set things to null if we didn't converge rather than return empty fit
-            fits[[i, 'continuous']] <- if(fit.real$glmnet.fit$jerr==-1) NULL else fit.real
+            fits[[i, 'continuous']] <- if(fit.real$glmnet.fit$jerr==-1 || min(fit.real$glmnet.fit$lambda) > 1e2 ) NULL else fit.real
             lambda[i,'continuous'] <- fit.real$lambda.min[1]
+            lambda0[i, 'continuous'] <- fit.real$glmnet.fit$lambda[1]
         })
         if(class(tt) == 'try-error') warning(sprintf('There was an error with gene %s', this.gene))
         message(this.gene, '\n')
     }
 
-    structure(fits, genes=genes, gene.predictors=gene.predictors, additive.dim=additive.dim, lambda=lambda, nobs=nobs, sigma=sigma)
+    structure(fits, genes=genes, gene.predictors=gene.predictors, additive.dim=additive.dim, lambda=lambda, lambda0=lambda0, nobs=nobs, sigma=sigma, response=response)
 }
 
 
 
-fortify.zifnetwork <- function(fits, lc.range, ld.range){
+fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
     sigma <- rename(cast(melt(attr(fits, 'sigma')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
-    null <- attr(fits, 'nobs')[,1]==0
+    null <- is.na(attr(fits, 'nobs')[,1])
     cv.fit <- fits[!null,]
     genes <- attr(fits, 'genes')[!null]
     
@@ -95,8 +104,8 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range){
 
     if(length(lc.range)!=2 || length(ld.range) != 2) stop("'lc.range' and 'ld.range' must both be length 2")
     
-    knots.c <- seq(from=lc.range[1], to=lc.range[2], length=20)
-    knots.d <- seq(from=ld.range[1], to=ld.range[2], length=20)
+    knots.c <- seq(from=lc.range[1], to=lc.range[2], length=nknots)
+    knots.d <- seq(from=ld.range[1], to=ld.range[2], length=nknots)
     
     for(g in seq_len(nrow(cv.fit))){
         twofit <- list(cv.fit[[g,1]]$glmnet.fit, cv.fit[[g,2]]$glmnet.fit)
@@ -164,13 +173,14 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range){
 ##' @param listOfFits output from fitZifNetwork
 ##' @param l.c continuous lambda value
 ##' @param l.d discrete lambda value
-##' @param collapse should a collapsed, symmetrized, boolean adjacency matrix be returned?
+##' @param collapse should the network be collapsed between layers?
 ##' @param constraint a constraint, which will be translated into the regularization tuning parameter lambda for each regression
 ##' @return an array
-getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE){
+getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE, union=TRUE, layers){
     genes <- dimnames(listOfFits)[['primerid']]
     gene.predictors <- attr(listOfFits, 'gene.predictors')
     additive.dim <- attr(listOfFits, 'additive.dim')
+    if(missing(layers)) layers <- seq_len(dim(listOfFits)[2])
 
     if(gene.predictors=='hurdle'){
          out <- array(0, c(length(genes), length(genes), 4), dimnames=list(genes, genes, c('di.cont', 'di.di', 'cont.di', 'cont.cont')))
@@ -187,7 +197,7 @@ getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE){
     for( i in seq_along(genes)){
         this.gene <- genes[i]
         genes.diff <- setdiff(genes, this.gene)
-        for(j in seq_len(dim(listOfFits)[2])){
+        for(j in layers){
             this.comp <- dimnames(listOfFits)[[2]][j]
             this.lambda <- if(this.comp =='continuous') l.c else l.d
             if(!is.null(listOfFits[[i, j]]) && length(this.lambda)>0){
@@ -205,10 +215,9 @@ getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE){
                                  # penalty.factor=penalty.factor)
         out[is.na(out)] <- 0
     if(collapse){
-        ## Take union of networks and symmetrize
+        ## Take union of layers 
         adj.nonsym <- apply(out!=0, c(1,2), any)*1
-        adj.sym <- (adj.nonsym+t(adj.nonsym))>1
-        return(adj.sym)
+        return(adj.nonsym)
     }
     return(out)
     
@@ -222,33 +231,37 @@ color <- function(attr, palette=brewer.pal, ...){
 
 ##' Turn an object from fitZifNetwork into a igraph object
 ##'
-##' 
-##' @param zifFit 
-##' @param constraint 
-##' @param Vattr 
-##' @param Eattr 
-##' @param collapse 
-##' @param weight 
+##' Edges/Vertex may be given colors by setting Vattr or Ettr
+##' @param zifFit fitZifNetwork output
+##' @param Vattr character vector named with vertex names. 
+##' @param Eattr data.frame with columns 'X1' 'X2' naming vertex pairs and 'value' giving the value for this set of edges
+##' @param collapse should the discrete/continuous parts be collapsed?
+##' @param union within each layer, should we take the union of a vertex's neighborhood, or should we take the intersection?
+##' @param weight currently ignored
 ##' @param ... passed to getZifNetwork
 ##' @return igraph object, with attributes
 ##' @import igraph
 ##' @importFrom RColorBrewer brewer.pal
-layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weight=FALSE, ...){
+layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weight=FALSE, union=TRUE, ...){
     if(weight && collapse) stop("Cannot provide both 'weight' and 'collapse'")
     if(!collapse && !is.null(Eattr)) stop("Cannot provide edge attributes when 'collapse = FALSE'")
     
-    adj <- SingleCellAnalysis:::getZifNetwork(FITS, collapse=collapse, ...)
+    adj <- SingleCellAnalysis:::getZifNetwork(zifFit, collapse=collapse, ...)
+    layerFun <- if(union) function(layer) (layer+ t(layer))/2 else function(layer) layer*t(layer)
+    totalEdges <- sum(abs(adj)>0)
     if(!collapse){
         stopifnot(length(dim(adj))==3)
         ## Symmetrize, get support and assign a bitmask to the layer
         for(l in seq_len(dim(adj)[3])){
-            adj[,,l] <- (adj[,,l] + t(adj[,,l]))/2
+            adj[,,l] <- layerFun(adj[,,l])
             adj[,,l] <- (abs(adj[,,l])>0)*2^(l) 
         }
         
         collapse <- aaply(adj, c(1,2), sum)
         Eattr <- subset(melt(collapse), value>0)
-        Eattr$value <- factor(Eattr$value)
+        Eattr$value <- factor(Eattr$value, levels=1:(2^(dim(adj)[3]+1)))
+    } else{
+        collapse <- abs(layerFun(adj))>0
     }
 
     connected <- colSums(collapse)>0
@@ -258,15 +271,15 @@ layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weig
     Ecol <- NULL
     if(!is.null(Eattr)){
     el2 <- merge(el, Eattr)
-    Ecol <- color(el2$value, name='Set1')
+    Ecol <- color(el2$value, name='Paired')
     E(gadj)$color <- Ecol
 }
     Vcol <- NULL
     if(!is.null(Vattr)){
         Vattr <- Vattr[V(gadj)$name]
-        Vcol <- color(Vattr, name='Set2')
+        Vcol <- color(Vattr, name='Set1')
         V(gadj)$color <- Vcol
     }
     
-       structure(gadj,Ecol=Ecol, Vcol=Vcol, Vlab=colnames(collapse.connect))
+       structure(gadj,Ecol=Ecol, Vcol=Vcol, Vlab=colnames(collapse.connect), totalEdges=totalEdges, adjacencyMatrix=collapse)
 }
