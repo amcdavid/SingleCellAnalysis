@@ -200,7 +200,7 @@ setClass('PairwiseOddsWithHook', contains='PairwiseOddsratio', representation=re
 ##' @param partial a character vector of terms to adjust for.  \code{cData(sc)} is used as a model frame.  If contains 'ngeneson' and it is not present in \code{cData} then it will be calculated.
 ##' @return PairwiseOddsRatio class, with slots \code{fits} (2-D list of fit) and \code{genes} (character vector of gene names).
 ##' @import SingleCellAssay
-##' @importFrom logistf logistf
+##' @importFrom brglm brglm
 ##' @export
 oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, lm.hook){
     if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
@@ -237,13 +237,16 @@ oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, l
 
        mf.new <- cbind(mf, logOR.primer2=ee[,i])
        Xnew <- model.matrix(Formula, mf.new)
-
-       
+       message(genes[i])
        for(j in setdiff(seq_along(genes), i)){
            if(freqs[j]<surrenderFreq || freqs[j]>1-surrenderFreq) next
            tt <- try({
                if(useFirth){
-                   ll <- logistf(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
+                   if(genes[i] %in% c('GZMA', 'IL-21'))
+                       message(genes[j])
+                   #browser(expr=genes[i]=='GZMA')
+                   #ll <- logistf(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
+                   ll <- brglm(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
                    vcov <- vcov(ll)
                    rownames(vcov) <- colnames(vcov) <- names(coef(ll))
                    ll$converged <- TRUE

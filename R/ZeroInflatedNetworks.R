@@ -102,6 +102,18 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
     grp.norm.list <- out <- vector(mode='list', length=nrow(cv.fit))
     names(grp.norm.list) <- names(out) <- genes
 
+
+    if(missing(lc.range) || missing(ld.range)){
+        message('Guessing `lc.range` and `ld.range`')
+         L.Dmax <- max(attr(FITS, 'lambda0')[,1], na.rm=TRUE)
+         L.Dmin <- median(attr(FITS, 'lambda')[,1], na.rm=TRUE)
+
+         L.Cmax <- max(attr(FITS, 'lambda0')[,2], na.rm=TRUE)
+         L.Cmin <- median(attr(FITS, 'lambda')[,2], na.rm=TRUE)
+         lc.range <- c(L.Dmin, L.Dmax)
+         ld.range <- c(L.Cmin, L.Dmax)
+     }
+    
     if(length(lc.range)!=2 || length(ld.range) != 2) stop("'lc.range' and 'ld.range' must both be length 2")
     
     knots.c <- seq(from=lc.range[1], to=lc.range[2], length=nknots)
@@ -115,7 +127,7 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
         ndev.c <- (1-twofit[[2]]$dev.ratio)*nobs.c
         fixed.d <-twofit[[1]]$df[1]
         fixed.c <- twofit[[2]]$df[1]
-        if(fixed.d != fixed.c) warning('mismatch between length of fixed predictors')
+        if(fixed.d != fixed.c) warning(sprintf('mismatch between length of fixed predictors in %s', attr(FITS, 'genes')[g]))
         norm.d <- apply(twofit[[1]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
         norm.c <- apply(twofit[[2]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.c) ])))
 
@@ -283,3 +295,45 @@ layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weig
     
        structure(gadj,Ecol=Ecol, Vcol=Vcol, Vlab=colnames(collapse.connect), totalEdges=totalEdges, adjacencyMatrix=collapse)
 }
+
+
+examineNetworks <- function(FITS){
+
+
+
+}
+
+
+plotNetworks <- function(FITS, nedges, layers=1:2, Vattr, printNNZperLambda=TRUE){
+
+   
+    fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, nknots=100)
+    
+lambda.cv <- as.data.frame(attr(FITS, 'lambda'))
+lambda.cv$primerid <- row.names(lambda.cv)
+fort <- merge(fort.out$fortified, lambda.cv, by='primerid')
+
+nnz.per.lambda <- cast(melt(fort, measure.vars=c('nnz.d','nnz.c')), knots.d + knots.c  ~ variable, fun.aggregate=sum)
+nnz.per.lambda <- nnz.per.lambda[order(-nnz.per.lambda$knots.d),]
+
+if(printNNZperLambda){
+    print(ggplot(nnz.per.lambda)+geom_line(aes(y=knots.d, x=nnz.d), col='blue')+geom_line(aes(y=knots.c, x=nnz.c), col='red') + xlab('Edges') + ylab('Lambda'))
+}
+
+
+nnz.per.lambda.fun <- list(
+    dichot=with(nnz.per.lambda, approxfun(nnz.d, knots.d)),
+    cont=with(nnz.per.lambda, approxfun(nnz.c, knots.c)))
+
+    grList <- list()
+for(i in seq_along(nedges)){
+    ## Spread edges evenly over the selected layers
+    edges <- nedges[i]/length(layers)
+    
+    l.c <- nnz.per.lambda.fun$cont(edges)
+    l.d <- nnz.per.lambda.fun$dichot(edges)
+    
+        grList[[i]] <- SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, l.c=l.c, l.d=l.d, union=TRUE, Vattr=Vattr, layers=layers)
+}
+    grList
+   }
