@@ -4,18 +4,6 @@ heat2 <- function(mat, Rowv=NA, Colv=NA, symbreaks=TRUE, col=if(symbreaks) redbl
   heatmap.2(mat, trace='none', scale='none', Rowv=Rowv, Colv=Colv, symbreaks=symbreaks, col=col, ...)
 }
 
-plotScDiscrete <- function(sc.sub, d){
-  ee.sc <- exprs(sc.sub)
-  suppressWarnings(cor.sc <- cor0(ee.sc>0))
-  if(!missing(d) && !is.null(d)){
-    heat2(cor.sc, Rowv=d$rowDendrogram, Colv=d$colDendrogram, breaks=d$breaks)
-  } else{
-    d <- heat2(cor.sc, Rowv=TRUE, Colv=TRUE)
-  }
-  d
-}
-
-
 
 
 heatmap.3 <- function(x,

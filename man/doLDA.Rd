@@ -22,6 +22,6 @@ Runs Fisher's LDA to discriminate 'grouping' via 'train',
 optionally attempting out-of-sample prediction using sample 'predict'
 }
 \seealso{
-\link{\code{doGLMnet}}, \link{\code{annotateBiPlot}}
+\link{doGLMnet}, \link{annotateBiPlot}
 }
 

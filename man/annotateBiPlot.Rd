@@ -26,6 +26,6 @@ So this function probably won't work unless ggpairs was called on 'lc'.
 There is an arbitrary scaling between the scatter plot and the length of these vectors.  By default the longest vector is scaled to have length of the narrowest plot limit, but this can be adjusted via 'expand'.
 }
 \seealso{
-\link{\code{doLDA}}, \link{\code{doGLMnet}}
+\link{doLDA}, \link{doGLMnet}
 }
 

@@ -59,6 +59,7 @@ setMethod('cv.glmnet', signature='formula', function(x, y, ...){
 ##' @export
 ##' @importFrom Matrix cBind
 ##' @import glmnet
+##' @import stringr
 glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), pen.scale.interaction=2, precenter=FALSE, prescale=FALSE, addn, addn.penalty, user.mm, alpha=.9, only.mm=FALSE, ...){
   predOpts <-  c('dichotomous', 'continuous', 'interaction', 'user')
   predictor <- match.arg(predictor, predOpts, several.ok=TRUE)

@@ -11,6 +11,9 @@
 ##' @param gene.predictors one of 'zero.inflated' or 'hurdle'.  See details.
 ##' @param precenter How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 ##' When precenter=TRUE, cv.glmnet will not standardize.
+##' @param precenter.fun a function called to center the expression matrix prior to calling glmnet
+##' @param response a character vector, one of 'zero.inflated' or 'hurdle'
+##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
@@ -194,14 +197,12 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
 ##'
 ##' The array is ngenes X ngenes X {2,4}, with the last dimension depending
 ##' on whether zero-inflated or hurdle predictors were used.
-##' When type = 'grp.l1' lambda for each regression is select to minimize the hurdle deviance subject to the grouped l1 norm being less than 'constraint'.
-##' When type = 'comb.l1', ditto but with the regular l1 norm being constrained.
-##' When type = 'lambda.min' lambda is selected to be 'constraint' times the lambda.min determined by cross validation.
 ##' @param listOfFits output from fitZifNetwork
 ##' @param l.c continuous lambda value
 ##' @param l.d discrete lambda value
 ##' @param collapse should the network be collapsed between layers?
-##' @param constraint a constraint, which will be translated into the regularization tuning parameter lambda for each regression
+##' @param union currently ignored
+##' @param layers upon which layers in the listOfFits should we operate (eg, discrete, continuous or both)
 ##' @return an array
 getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE, union=TRUE, layers){
     genes <- dimnames(listOfFits)[['primerid']]

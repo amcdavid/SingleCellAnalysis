@@ -49,7 +49,7 @@ stat_ellipse <- function(mapping=NULL, data=NULL, geom="path", position="identit
 ##' @param Layer which layer should be used to train and predict?
 ##' @return object of class 'LinearClassifier' and 'matrix'
 ##' @export
-##' @seealso \link{\code{doGLMnet}}, \link{\code{annotateBiPlot}}
+##' @seealso \link{doGLMnet}, \link{annotateBiPlot}
 ##' @importFrom MASS lda
 doLDA <- function(train, predict, grouping, Layer='lCount'){
         layer(train) <- Layer
@@ -68,7 +68,7 @@ doLDA <- function(train, predict, grouping, Layer='lCount'){
 ##' @param predict output from \code{glmSingleCellAssay}, used for its model.matrix to predict (possibly) out of sample
 ##' @param s glmnet penalty parameter, default 'lambda.1se'
 ##' @return object of class 'Linear Classifier' and 'matrix'
-##' @seealso \link{\code{doLDA}}, \link{\code{annotateBiPlot}}, \link{\code{glmSingleCellAssay}}
+##' @seealso \link{doLDA}, \link{annotateBiPlot}, \link{glmSingleCellAssay}
 ##' @export
 doGLMnet <- function(train, predict, s='lambda.1se'){
     pX <- predict(train$cv.fit, predict$mm, s=s)
@@ -117,9 +117,11 @@ prepClassifier <- function(lc){
 ##'
 ##' @param lc LinearClassifier
 ##' @param optional ignored
+##' @param row.names ignored
+##' @param ... ignored
 ##' @return data.frame
 ##' @export
-as.data.frame.LinearClassifier <- function(lc, optional){
+as.data.frame.LinearClassifier <- function(lc, row.names, optional, ...){
     cbind(as.data.frame.matrix(lc), attr(lc, 'cData'))
 }
 
@@ -168,7 +170,7 @@ addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), 
 ##' @return modified ggpairs object, which can be plotted by evaluating it.
 ##' @importFrom GGally getPlot putPlot
 ##' @export
-##' @seealso \link{\code{doLDA}}, \link{\code{doGLMnet}}
+##' @seealso \link{doLDA}, \link{doGLMnet}
 annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, ...){
     ## Precondition: lower triangle contains scatter plots
     ## and possibly some condition on the order of the scatter plots and lc

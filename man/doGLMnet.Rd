@@ -19,6 +19,6 @@ object of class 'Linear Classifier' and 'matrix'
 Wraps a glmnet classifier (derived from glmSingleCellAssay) to get the scores (coefficients) and predictions.
 }
 \seealso{
-\link{\code{doLDA}}, \link{\code{annotateBiPlot}}, \link{\code{glmSingleCellAssay}}
+\link{doLDA}, \link{annotateBiPlot}, \link{glmSingleCellAssay}
 }
 

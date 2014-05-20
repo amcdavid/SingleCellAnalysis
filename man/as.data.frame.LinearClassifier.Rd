@@ -3,12 +3,16 @@
 \alias{as.data.frame.LinearClassifier}
 \title{Combine predictions from a LinearClassifier with cData from the object used to generate it}
 \usage{
-\method{as.data.frame}{LinearClassifier}(lc, optional)
+\method{as.data.frame}{LinearClassifier}(lc, row.names, optional, ...)
 }
 \arguments{
 \item{lc}{LinearClassifier}
 
 \item{optional}{ignored}
+
+\item{row.names}{ignored}
+
+\item{...}{ignored}
 }
 \value{
 data.frame

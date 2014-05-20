@@ -14,7 +14,9 @@ getZifNetwork(listOfFits, l.c, l.d, collapse = FALSE, union = TRUE, layers)
 
 \item{collapse}{should the network be collapsed between layers?}
 
-\item{constraint}{a constraint, which will be translated into the regularization tuning parameter lambda for each regression}
+\item{union}{currently ignored}
+
+\item{layers}{upon which layers in the listOfFits should we operate (eg, discrete, continuous or both)}
 }
 \value{
 an array
@@ -22,8 +24,5 @@ an array
 \description{
 The array is ngenes X ngenes X {2,4}, with the last dimension depending
 on whether zero-inflated or hurdle predictors were used.
-When type = 'grp.l1' lambda for each regression is select to minimize the hurdle deviance subject to the grouped l1 norm being less than 'constraint'.
-When type = 'comb.l1', ditto but with the regular l1 norm being constrained.
-When type = 'lambda.min' lambda is selected to be 'constraint' times the lambda.min determined by cross validation.
 }
 

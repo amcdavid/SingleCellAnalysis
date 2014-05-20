@@ -18,6 +18,12 @@ fitZifNetwork(sc, additive.effects, min.freq = 0.05,
 
 \item{precenter}{How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 When precenter=TRUE, cv.glmnet will not standardize.}
+
+\item{precenter.fun}{a function called to center the expression matrix prior to calling glmnet}
+
+\item{response}{a character vector, one of 'zero.inflated' or 'hurdle'}
+
+\item{...}{passed to cv.glmnet}
 }
 \value{
 2-D list of cv.glmnet objects with attributes

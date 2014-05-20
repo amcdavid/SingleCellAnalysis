@@ -101,10 +101,14 @@ setClass('PairwiseOddsWithHook', contains='PairwiseOddsratio', representation=re
 ##' Calculates odds ratios between each pair of genes on the
 ##' dichotomous level.
 ##' @param sc SingleCellAssay object
-##' @param partial a character vector of terms to adjust for.  \code{cData(sc)} is used as a model frame.  If contains 'ngeneson' and it is not present in \code{cData} then it will be calculated.
+##' @param Formula a formula used to build the design matrix.  Probably should include the term 'logOR.primer2' (if the pairwise odds ratios are indeed desired).
+##' @param surrenderFreq any pair of genes in which either is expressed above or below this threshold will be skipped
+##' @param useFirth should biased-reduced regression be used via brglm.  Slow.
+##' @param lm.hook a function to be called on the fitted regression
+##' @param MAX_IT if useFirth==TRUE, how many iterations should be permitted?
 ##' @return PairwiseOddsRatio class, with slots \code{fits} (2-D list of fit) and \code{genes} (character vector of gene names).
 ##' @import SingleCellAssay
-##' @importFrom brglm brglm
+##' @importFrom brglm brglm brglm.control
 ##' @export
 oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, lm.hook, MAX_IT=30){
     if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
