@@ -20,11 +20,3 @@ Imports:
     RColorBrewer,
     igraph,
     abind
-Collate:
-    'ZeroInflatedNetworks.R'
-    'glmformula.R'
-    'pairwisestat.R'
-    'panelfun.R'
-    'prelim.norm.R'
-    'ngeneson.R'
-    'GroupLassoNetworks.R'
