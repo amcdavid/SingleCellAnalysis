@@ -97,7 +97,6 @@ invisible(list(listofcor=cor.bypat, dendro=dendro))
 }
 
 randomForestClass <-  function(sc, groups){
-library(randomForest)
 class <- factor(do.call(paste, cData(sc)[,groups, drop=FALSE]))
 rpartcont <- data.frame(class, exprs(sc))
 rf <- randomForest(class ~., data=rpartcont,type='class', proximity=TRUE)

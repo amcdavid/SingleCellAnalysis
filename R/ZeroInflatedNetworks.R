@@ -21,8 +21,9 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
     genes <- fData(sub)$primerid
 
     ## Additive (un-penalized) variables named from cData
-    additive.mat <- model.matrix(as.formula(sprintf('~ %s', paste(additive.effects, collapse='+'))), cData(sub))[, -1] #no intercept
+    additive.mat <- model.matrix(as.formula(sprintf('~ %s', paste(additive.effects, collapse='+'))), cData(sub))[, -1, drop=FALSE] #no intercept
     additive.dim <- ncol(additive.mat)
+        
 
     ## Untested code to decompose predictors into continuous/dichtomous
     if(gene.predictors == 'hurdle'){
@@ -93,25 +94,28 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
 
 
-fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
+fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=0){
     sigma <- rename(cast(melt(attr(fits, 'sigma')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
     null <- is.na(attr(fits, 'nobs')[,1])
     cv.fit <- fits[!null,]
     genes <- attr(fits, 'genes')[!null]
-    
-    grp.norm.list <- out <- vector(mode='list', length=nrow(cv.fit))
+
+    ## out.nativepath: use solution path specific to the gene
+    ## out: line things up using knots over the l1 norm on the betas
+    ## grp.norm.list: not currently used
+    out.nativepath <- grp.norm.list <- out <- vector(mode='list', length=nrow(cv.fit))
     names(grp.norm.list) <- names(out) <- genes
 
 
     if(missing(lc.range) || missing(ld.range)){
-        message('Guessing `lc.range` and `ld.range`')
-         L.Dmax <- max(attr(FITS, 'lambda0')[,1], na.rm=TRUE)
-         L.Dmin <- median(attr(FITS, 'lambda')[,1], na.rm=TRUE)
+         L.Dmax <- max(attr(fits, 'lambda0')[,1], na.rm=TRUE)
+         L.Dmin <- quantile(attr(fits, 'lambda')[,1], na.rm=TRUE, probs=.1)
 
-         L.Cmax <- max(attr(FITS, 'lambda0')[,2], na.rm=TRUE)
-         L.Cmin <- median(attr(FITS, 'lambda')[,2], na.rm=TRUE)
-         lc.range <- c(L.Dmin, L.Dmax)
-         ld.range <- c(L.Cmin, L.Dmax)
+         L.Cmax <- max(attr(fits, 'lambda0')[,2], na.rm=TRUE)
+         L.Cmin <- quantile(attr(fits, 'lambda')[,2], na.rm=TRUE, probs=.1)
+         ld.range <- c(L.Dmin, L.Dmax)
+         lc.range <- c(L.Cmin, L.Cmax)
+         message(sprintf('Guessing `lc.range`=[%f, %f] and `ld.range`=[%f, %f]', L.Cmin, L.Cmax, L.Dmin, L.Dmax))
      }
     
     if(length(lc.range)!=2 || length(ld.range) != 2) stop("'lc.range' and 'ld.range' must both be length 2")
@@ -123,17 +127,26 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
         twofit <- list(cv.fit[[g,1]]$glmnet.fit, cv.fit[[g,2]]$glmnet.fit)
         nobs.d <- twofit[[1]]$nobs
         nobs.c <- twofit[[2]]$nobs
-        ndev.d <- (1-twofit[[1]]$dev.ratio)*nobs.d
-        ndev.c <- (1-twofit[[2]]$dev.ratio)*nobs.c
+        ndev.d <- (1-twofit[[1]]$dev.ratio)*twofit[[1]]$nulldev
+        ndev.c <- (1-twofit[[2]]$dev.ratio)*twofit[[2]]$nulldev
         fixed.d <-twofit[[1]]$df[1]
         fixed.c <- twofit[[2]]$df[1]
-        if(fixed.d != fixed.c) warning(sprintf('mismatch between length of fixed predictors in %s', attr(FITS, 'genes')[g]))
+        if(fixed.d != fixed.c) warning(sprintf('mismatch between length of fixed predictors in %s', genes[g]))
         norm.d <- apply(twofit[[1]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
         norm.c <- apply(twofit[[2]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.c) ])))
 
         l.d <- twofit[[1]]$lambda
         l.c <- twofit[[2]]$lambda
-        
+
+        nnz.d <- twofit[[1]]$df-fixed.d
+        nnz.c <- twofit[[2]]$df-fixed.c
+
+        bic.d <- ndev.d+nnz.d*log(nobs.d) + 2*ebic.lambda*nnz.d*log(length(genes))
+        bic.c <- ndev.c+nnz.c*log(nobs.c) +2*ebic.lambda*nnz.c*log(length(genes))
+
+        ## Now line things up by knots
+        out.nativepath[[g]] <- rbind(data.frame(lambda=l.d, nnz=nnz.d, ndev=ndev.d, primerid=genes[g], bic=bic.d,component='discrete'),
+                                     data.frame(lambda=l.c, nnz=nnz.c, ndev=ndev.c, primerid=genes[g], bic=bic.c,component='continuous'))
 
         norm.d <- approx(l.d, norm.d, knots.d, rule=2)$y
         norm.c <- approx(l.c, norm.c, knots.c, rule=2)$y
@@ -158,19 +171,21 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20){
         ## grp.norm.list[[g]] <-cbind(cast(melt(comb.norm), ...~estimand, fun.aggregate='[', x=1), primerid=genes[g], stringsAsFactors=FALSE) #fun.aggregate='[' because we might have duplicate lambda is we're on the boundary
 
         
-        nnz.d <- approx(l.d, twofit[[1]]$df-fixed.d, knots.d, method='constant', rule=2)$y
-        nnz.c <- approx(l.c, twofit[[2]]$df-fixed.c, knots.c, method='constant', rule=2)$y
+        nnz.d <- approx(l.d, nnz.d, knots.d, method='constant', rule=2)$y
+        nnz.c <- approx(l.c, nnz.c, knots.c, method='constant', rule=2)$y
         l.d <- approx(l.d, l.d, knots.d, rule=2)$y
         l.c <- approx(l.c, l.c, knots.c, rule=2)$y
 
+       
         #data.frame(norm=knots, ndev1, ndev2, l1, l2)
         out[[g]] <- data.frame(norm.d, norm.c, nnz.d, nnz.c, knots.d, knots.c, l.d, l.c, ndev.d, ndev.c, nobs.d, nobs.c, primerid=genes[g])
     }
     fortified <- merge(sigma, do.call(rbind, out))
+    native.path <- do.call(rbind, out.nativepath)
     #norm.grid <- do.call(rbind, grp.norm.list)
     
     
-    list(fortified=fortified, norm.grid=NA)
+    list(fortified=fortified, norm.grid=NA, native.path=native.path)
         
         }
 
@@ -194,6 +209,17 @@ getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE, union=TRUE, laye
     additive.dim <- attr(listOfFits, 'additive.dim')
     if(missing(layers)) layers <- seq_len(dim(listOfFits)[2])
 
+    if(length(l.c) == 1){
+        message("Taking 'l.c' to be constant over genes")
+        l.c <- rep(l.c, length(genes))
+    }
+
+    if(length(l.d) == 1){
+        message("Taking 'l.d' to be constant over genes")
+        l.d <- rep(l.d, length(genes))
+    }
+
+
     if(gene.predictors=='hurdle'){
          out <- array(0, c(length(genes), length(genes), 4), dimnames=list(genes, genes, c('di.cont', 'di.di', 'cont.di', 'cont.cont')))
          genes.appear <- 2
@@ -211,7 +237,7 @@ getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE, union=TRUE, laye
         genes.diff <- setdiff(genes, this.gene)
         for(j in layers){
             this.comp <- dimnames(listOfFits)[[2]][j]
-            this.lambda <- if(this.comp =='continuous') l.c else l.d
+            this.lambda <- if(this.comp =='continuous') l.c[i] else l.d[i]
             if(!is.null(listOfFits[[i, j]]) && length(this.lambda)>0){
 
                 ## kill intercept
@@ -296,18 +322,28 @@ layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weig
        structure(gadj,Ecol=Ecol, Vcol=Vcol, Vlab=colnames(collapse.connect), totalEdges=totalEdges, adjacencyMatrix=collapse)
 }
 
+##' @importFrom plyr ddply
+##' @import reshape
+plotNetworksBIC <- function(FITS, ebic.lambda, layers=1:2, ...){
 
-examineNetworks <- function(FITS){
+fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, ebic.lambda=ebic.lambda)$native.path
+
+min.bic <- ddply(fort.out, ~primerid + component, function(df){
+    df[which.min(df$bic), ]
+    })
+
+min.bic.pid <- cast(min.bic, primerid  ~ component, value='lambda')
+min.bic.pid <- min.bic.pid[match(attr(FITS, 'genes'), min.bic.pid$primerid),]
 
 
+SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, l.c=min.bic.pid$continuous + .001, l.d=min.bic.pid$discrete + .001, union=TRUE, layers=layers, ...)
 
 }
 
-
-plotNetworks <- function(FITS, nedges, layers=1:2, Vattr, printNNZperLambda=TRUE){
+plotNetworks <- function(FITS, nedges, layers=1:2, printNNZperLambda=TRUE, ...){
 
    
-    fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, nknots=100)
+fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, nknots=100)
     
 lambda.cv <- as.data.frame(attr(FITS, 'lambda'))
 lambda.cv$primerid <- row.names(lambda.cv)
@@ -333,7 +369,7 @@ for(i in seq_along(nedges)){
     l.c <- nnz.per.lambda.fun$cont(edges)
     l.d <- nnz.per.lambda.fun$dichot(edges)
     
-        grList[[i]] <- SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, l.c=l.c, l.d=l.d, union=TRUE, Vattr=Vattr, layers=layers)
+        grList[[i]] <- SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, l.c=l.c, l.d=l.d, union=TRUE, layers=layers, ...)
 }
     grList
    }

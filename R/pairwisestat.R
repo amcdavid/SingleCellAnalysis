@@ -202,7 +202,7 @@ setClass('PairwiseOddsWithHook', contains='PairwiseOddsratio', representation=re
 ##' @import SingleCellAssay
 ##' @importFrom brglm brglm
 ##' @export
-oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, lm.hook){
+oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, lm.hook, MAX_IT=30){
     if(layername(sc) != 'et') warning('Tests fail unless on a thresholded layer')
     ee <- (exprs(sc)>0)*1
     ## if(!missing(Formula)){
@@ -246,10 +246,10 @@ oddsratio.pairwise <- function(sc, Formula, surrenderFreq=.05, useFirth=FALSE, l
                        message(genes[j])
                    #browser(expr=genes[i]=='GZMA')
                    #ll <- logistf(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
-                   ll <- brglm(ee[,j] ~ .+0, data=as.data.frame(Xnew), pl=FALSE)
+                   ll <- brglm(ee[,j] ~ .+0, data=as.data.frame(Xnew), control.brglm=brglm.control(br.maxit=MAX_IT))
+                   ll$converged <- ll$nIter<MAX_IT
                    vcov <- vcov(ll)
                    rownames(vcov) <- colnames(vcov) <- names(coef(ll))
-                   ll$converged <- TRUE
                    ll$boundary <- FALSE
                } else{
                    ll <- glm.fit(Xnew, ee[,j], family=binomial())

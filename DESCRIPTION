@@ -3,7 +3,7 @@ Type: Package
 Title: Tools for Analysis of Zero-Inflated, Continuous Data
 Description: Utility functions for plotting and summarizing Single Cell
     Expression Data
-Version: 0.11
+Version: 0.3
 Author: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Maintainer: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Depends:
@@ -14,17 +14,15 @@ Imports:
     glmnet,
     stringr,
     SingleCellAssay (>= 0.71),
-    randomForest,
     gplots,
-    logistf,
     RColorBrewer,
     igraph,
-    abind
-Collate:
-    'ZeroInflatedNetworks.R'
-    'glmformula.R'
-    'pairwisestat.R'
-    'panelfun.R'
-    'prelim.norm.R'
-    'ngeneson.R'
-    'GroupLassoNetworks.R'
+    abind,
+    plyr,
+    reshape,
+    proto,
+    GGally,
+    MASS,
+    brglm,
+    ggplot2,
+    Matrix
