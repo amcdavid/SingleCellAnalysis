@@ -26,7 +26,6 @@ setMethod('cv.glmnet', signature='formula', function(x, y, ...){
   
   response <- model.response(mf)
   mm <- model.matrix(x, mf)
-  options(opar)
   if(family=='binomial')
     response <- as.numeric(as.factor(response))
   x <- mm
@@ -35,12 +34,32 @@ setMethod('cv.glmnet', signature='formula', function(x, y, ...){
 }
           )
 
-## Run lasso on singlecellassay object to predict comparison
-## Omit genes above/below min.freq
-## Use either continuous, dichotomous, or both predictors
-## If using both, take orthogonal xform of continuous
-## Return crossvalidated glm, model matrix, response and singlecellassay object
-glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), addn, addn.penalty, user.mm, alpha=.9, only.mm=FALSE, ...){
+##' Run a multinomial lasso on a SingleCellAssay object to predict group membership
+##'
+##' This function generates a design matrix based on the expression values in \code{sca}
+##' and calls \code{cv.glmnet} to try to classify a group named by \code{comparison}, which keys a column in the \code{cData} of \code{sca}
+##'
+##' The design matrix is generated according to the option \code{predictor}. If \code{predictor} vector includes the term 'dichotomous', then each gene is treated as binary indicators.  If the term 'continuous' is included, then the zero-inflated (continuous) value for the gene is used.  If both 'continuous' and 'dichotomous' are included, then the both values for the gene are used, however the continuous values are centered about their conditional mean using the function \code{xform}.  If 'interaction' is included, then all the terms are crossed with each other to generate pairwise interactions.
+##' 
+##' @param sca SingleCellAssay object
+##' @param comparison character naming a column in \code{cData(sca)}
+##' @param min.freq minimum frequency for a gene to be considered in the classifier
+##' @param predictor character vector naming some combination of 'continuous', 'dichotomous' or 'interaction'.  See details.
+##' @param pen.scale.interaction multiply the l1 penalty by this factor if interactions are included
+##' @param precenter should the gene predictors be centered? Recommended if there are interactions present to reduce co-linearity of the interaction with the marginal term.
+##' @param prescale should the gene predictors be scaled to have unit variance?
+##' @param addn a data frame of nrow(sca) giving additional predictors to be added to the design
+##' @param addn.penalty an optional vector of length ncol(addn) giving the relative scale of the penalty for add
+##' @param user.mm a function to be applied to exprs(sca) instead of the defaults given by \code{predictor}
+##' @param alpha elasticnet penalty parameter. Default =.9.
+##' @param only.mm Should only the model matrix be returned, rather than actually calling cv.glmnet?
+##' @param ... additional arguments to cv.glmnet.
+##' @return list with components 'cv.fit' giving the output from cv.glmnet, 'mm' giving the model matrix, 'response' giving the response vector and 'sca' containing the 'sca' passed as input to the function
+##' @seealso glmMisclass, getNZdesign, doGLMnet, cv.glmnet
+##' @export
+##' @importFrom Matrix cBind
+##' @import glmnet
+glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), pen.scale.interaction=2, precenter=FALSE, prescale=FALSE, addn, addn.penalty, user.mm, alpha=.9, only.mm=FALSE, ...){
   predOpts <-  c('dichotomous', 'continuous', 'interaction', 'user')
   predictor <- match.arg(predictor, predOpts, several.ok=TRUE)
   sel <- freq(sca) > min.freq & (1-freq(sca)) > min.freq
@@ -50,9 +69,10 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   ee <- ee[,sel]
   ee.dichot <- ee>0
   if(all(c('dichotomous', 'continuous') %in% predictor)){
-  ee.real <- xform(ee)
+  ee.real <- SingleCellAssay:::xform(ee)
 } else{
-  ee.real <- ee
+    ee.real <- scale(ee, scale=prescale, center=precenter)
+        
 }
   df <- as.data.frame(cbind(ee.dichot, ee.real))
   names(df) <- make.names(c(paste(colnames(ee), 'd', sep='.'), paste(colnames(ee), 'c', sep='.')))
@@ -77,19 +97,24 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   mm <- model.matrix(formula(form), df)[, -1]
 }
   if(!missing(addn)){
-  mm <- cbind(mm, addn)
+      mm <- cbind(mm, addn)
 }
   pf <- rep(1, ncol(mm))
+  if('interaction' %in% predictor){
+      interIdx <- str_detect(colnames(mm), fixed(':'))
+      pf[interIdx] <- pf[interIdx]*pen.scale.interaction
+  }
+
+      
   if(!missing(addn.penalty)){
-  pf <- c(rep(1, ncol(mm)), addn.penalty)
+  pf <- c(pf, addn.penalty)
 }
-  options(opar)
 
   mm <- mm[!is.na(resp),]
   resp <- resp[!is.na(resp)]
   
   if(only.mm) return(list(mm=mm, resp=resp))
-  
+  message('Calling cv.glmnet on ',  ncol(mm), ' predictors and ', nrow(mm), ' cells')
   fit <- cv.glmnet(mm, resp,  family=fam, alpha=alpha, penalty.factor=pf, ...)
   list(cv.fit=fit, mm=mm, response=resp, sca=sca)
 }
@@ -99,37 +124,41 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
 ## in which case, response is predicted via the fit in cv.glmnet
 glmMisclass <- function(glmsca, alt.fit, groups, s='lambda.min'){
   stopifnot(missing(groups)|| length(groups)==1)
-  if(!missing(alt.fit)){
-  pred <- predict(alt.fit$cv.fit, glmsca$mm, type='response', s=s)[,,1]
-  nresp <- levels(alt.fit$response)
-} else{
-   pred <- predict(glmsca$cv.fit, glmsca$mm, type='response', s=s)[,,1]
-   nresp <- levels(glmsca$response)
-}
+  if(missing(alt.fit))
+      alt.fit <- glmsca
+  
+  nresp <- levels(glmsca$response)
   resp <- glmsca$response
-  w.max <- apply(pred, 1, which.max)
   if(missing(groups)){fact <- rep('(all)', length(glmsca$resp))}
   else{ fact <- cData(glmsca$sca)[,groups,drop=FALSE]}
   names(fact) <- NULL
-  truthvec <- data.frame(pred=nresp[w.max], truth=resp, fact=fact)
+  pred <- factor(as.vector(predict(glmsca$cv.fit, alt.fit$mm, type='class')), levels=nresp)
+  truthvec <- data.frame(pred=pred, truth=resp, fact=fact)
   tab <- with(truthvec, table(pred, truth, fact))
   ## tab <- tapply(seq_along(nrow(pred)), nrow(fact), function(i){
   ##   x <- table(pred[i,], levels(resp)[w.max[i]])
   ##               print(x)
   ##               x
   ##             })
-  print(tab)
+
   correct.class <- apply(tab, 3, function(x){1-sum(diag(prop.table(x)))})
   message('Error rate ', paste(names(correct.class), round(correct.class, 3), sep=':', collapse=' '))
+  invisible(list(confusion=tab, errorRate=correct.class))
 }
 
-.sparseGlmToMat <- function(sparseList, ...){
-  mat <- lapply(sparseList, as.matrix)
-  mm <- melt(mat)
-  coefmat <- cast(mm,  X1 ~ L1, ...)
-  coefmat <- rename(coefmat, c('X1'='predictor'))
-  coefmat[is.na(coefmat)] <- 0
-  coefmat
+.sparseGlmToMat <- function(fit, s='lambda.1se'){
+    scores <- coef(fit, s=s)
+    Scores <- do.call(cBind, scores)[-1,] #No intercept
+    nz <- apply(abs(Scores)>1e-3, 1, any)
+    Scores <- as.matrix(Scores[nz,])
+    colnames(Scores) <- names(scores)
+    Scores
+}
+
+getNZDesign <- function(glmsca, s='lambda.1se'){
+    scores <- .sparseGlmToMat(glmsca$cv.fit)
+    nz <- row.names(scores)
+    glmsca$mm[,nz]
 }
 
 summarizeCoef <- function(glmsca, s='lambda.min'){

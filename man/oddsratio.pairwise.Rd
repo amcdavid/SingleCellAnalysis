@@ -4,7 +4,11 @@
 \title{Calculate pairwise gene odds ratios}
 \usage{
 oddsratio.pairwise(sc, Formula, surrenderFreq = 0.05, useFirth = FALSE,
+<<<<<<< HEAD
   lm.hook)
+=======
+  lm.hook, MAX_IT = 30)
+>>>>>>> old
 }
 \arguments{
 \item{sc}{SingleCellAssay object}
