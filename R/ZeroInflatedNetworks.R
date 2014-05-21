@@ -12,7 +12,7 @@
 ##' @param precenter How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 ##' When precenter=TRUE, cv.glmnet will not standardize.
 ##' @param precenter.fun a function called to center the expression matrix prior to calling glmnet
-##' @param response a character vector, one of 'zero.inflated' or 'hurdle'
+##' @param response a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression'
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
@@ -38,7 +38,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         ## Additive effects, then zero inflated genes
         model.mat <- as.matrix(cbind(additive.mat, as.data.frame(exprs(sub))))
         genes.appear <- 1
-    }
+    } 
     
     if(precenter)
         model.mat <- precenter.fun(model.mat)
@@ -65,7 +65,9 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         tt <- try({
             if(response == 'hurdle'){
             fit.dichot <- cv.glmnet(this.model, y.dichot, family='binomial', penalty.factor=penalty.factor, standardize=!precenter, ...)
-        } else{
+        } else if(response=='cg.regression'){
+
+        }else if(response == 'zero.inflated'){
             fit.dichot <- cv.glmnet(this.model, y.zif, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
             fit.real <- fit.dichot
             }
@@ -94,6 +96,9 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
     structure(fits, genes=genes, gene.predictors=gene.predictors, additive.dim=additive.dim, lambda=lambda, lambda0=lambda0, nobs=nobs, sigma=sigma, response=response)
 }
+
+## Alternately: factor out looping code as function
+## needs to write to lambda, lambda0, nobs, etc
 
 
 
