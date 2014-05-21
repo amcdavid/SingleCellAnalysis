@@ -1,5 +1,5 @@
 ##' @importFrom glmnet cv.glmnet
-setGeneric('cv.glmnet')#, function(x, y, ...) standardGeneric('cv.glmnet'))
+setGeneric('cv.glmnet',  function(x, y, ...) standardGeneric('cv.glmnet'))
 
 contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
   contr.treatment(n, base, contrasts, sparse)

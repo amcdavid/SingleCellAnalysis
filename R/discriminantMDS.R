@@ -1,4 +1,17 @@
-require(proto)
+##' Draw a confidence ellipse
+##'
+##' @param mapping 
+##' @param data 
+##' @param geom 
+##' @param position 
+##' @param ... 
+##' @return ggplot2 layer
+##' @importFrom MASS cov.trob
+##' @import proto
+stat_ellipse <- function(mapping=NULL, data=NULL, geom="path", position="identity", ...) {
+  StatEllipse$new(mapping=mapping, data=data, geom=geom, position=position, ...)
+}
+
 
 StatEllipse <- proto(ggplot2:::Stat,
 	{
@@ -15,7 +28,6 @@ StatEllipse <- proto(ggplot2:::Stat,
       if (dfd < 3){
       	ellipse <- rbind(c(NA,NA))	
       } else {
-          require(MASS)
           v <- cov.trob(cbind(data$x, data$y))
           shape <- v$cov
           center <- v$center
@@ -31,12 +43,6 @@ StatEllipse <- proto(ggplot2:::Stat,
 		}
 	}
 )
-
-stat_ellipse <- function(mapping=NULL, data=NULL, geom="path", position="identity", ...) {
-  StatEllipse$new(mapping=mapping, data=data, geom=geom, position=position, ...)
-}
-
-
 
 
 ##' Run Linear Discriminant Analysis
@@ -169,6 +175,7 @@ addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), 
 ##' @param ... additional arguments passed to ggplot
 ##' @return modified ggpairs object, which can be plotted by evaluating it.
 ##' @importFrom GGally getPlot putPlot
+##' @importFrom grid unit arrow
 ##' @export
 ##' @seealso \link{doLDA}, \link{doGLMnet}
 annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, ...){
