@@ -1,38 +1,43 @@
-##' @importFrom glmnet cv.glmnet
-setGeneric('cv.glmnet',  function(x, y, ...) standardGeneric('cv.glmnet'))
+## ##' @importFrom glmnet cv.glmnet
+## setGeneric('cv.glmnet',  function(x, y, ...) standardGeneric('cv.glmnet'))
 
-contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
-  contr.treatment(n, base, contrasts, sparse)
-}
+## contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
+##   contr.treatment(n, base, contrasts, sparse)
+## }
 
-##' Generic for cv.glmnet
-##'
-##' Accepts formula arguments
-##' @param x formula
-##' @param y data.frame or environment in which \code{x} is evaluated
-##' @param ... arguments passed to cv.glmnet
-##' @return see cv.glmnet
-##' @export
-setMethod('cv.glmnet', signature='formula', function(x, y, ...){
-  family <- list(...)$family
-  subset <- list(...)$subset
-  if(is.null(family)) family <- 'gaussian'
-  stopifnot(is.data.frame(y))
-  if(is.null(subset)){
-    mf <- model.frame(x, y, subset=NULL)
-  } else {
-    mf <- model.frame(x, y, subset=subset)
-  }
+
+## setMethod('cv.glmnet', signature='ANY', function(x, y, ...){
+##     callNextMethod()
+## })
+
+## ##' Generic for cv.glmnet
+## ##'
+## ##' Accepts formula arguments
+## ##' @param x formula
+## ##' @param y data.frame or environment in which \code{x} is evaluated
+## ##' @param ... arguments passed to cv.glmnet
+## ##' @return see cv.glmnet
+## ##' @export
+## setMethod('cv.glmnet', signature='formula', function(x, y, ...){
+##   family <- list(...)$family
+##   subset <- list(...)$subset
+##   if(is.null(family)) family <- 'gaussian'
+##   stopifnot(is.data.frame(y))
+##   if(is.null(subset)){
+##     mf <- model.frame(x, y, subset=NULL)
+##   } else {
+##     mf <- model.frame(x, y, subset=subset)
+##   }
   
-  response <- model.response(mf)
-  mm <- model.matrix(x, mf)
-  if(family=='binomial')
-    response <- as.numeric(as.factor(response))
-  x <- mm
-  y <- response
-  callNextMethod()
-}
-          )
+##   response <- model.response(mf)
+##   mm <- model.matrix(x, mf)
+##   if(family=='binomial')
+##     response <- as.numeric(as.factor(response))
+##   x <- mm
+##   y <- response
+##   callNextMethod()
+## }
+##           )
 
 ##' Run a multinomial lasso on a SingleCellAssay object to predict group membership
 ##'
