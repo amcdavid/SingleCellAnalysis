@@ -142,21 +142,24 @@ getCoord <- function(lc, d1, d2, genesToShow){
 ##'
 ##' This function is necessary because there is no way to set aesthetics in ggpairs for only a portion of the plot matrix.
 ##' If ellipseArgList is empty, then no ellipses will be drawn.
+##' If globalGGobjs is non-empty, then it will be added (+) to each panel.  You might use this to alter the color scale 
 ##' @param ggpairsObj output from ggpairs
 ##' @param panels numeric vector giving rows/columns to modify from the _lower_ triangle of the plot matrix
 ##' @param ellipseArgList list of ggplot aesthetics to be set to fixed values for the ellipses, eg, \code{lwd} or \code{alpha}
 ##' @param pointsArgList list of ggplot aesthetics to be rewritten for the purposes of calling geom point, eg, \code{size} or \code{alpha}
+##' @param globalGGobjs vector of ggplot2 theme or scale elements 
 ##' @return ggpairs object with modified panels
 ##' @export
 ##' @import ggplot2
-addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), pointsArgList=list()){
+addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), pointsArgList=list(), globalGGobjs=list()){
     if(length(pointsArgList)>0)         update_geom_defaults('point', pointsArgList)
-    for(p1 in panels){
-        for( p2 in panels){
-            if (p1<=p2) next
+    ncol <- length(ggpairsObj$columns)
+    for(p1 in seq_len(ncol)){
+        for( p2 in seq_len(ncol)){
             panel <- getPlot(ggpairsObj, p1, p2)
-            if(length(ellipseArgList)>0)                 panel <- panel + do.call(stat_ellipse, ellipseArgList)
-            ggpairsObj <- putPlot(ggpairsObj, panel, p1, p2)
+            if(length(ellipseArgList)>0 && p2<p1 && p1<=max(panels)) panel <- panel + do.call(stat_ellipse, ellipseArgList)
+            if(length(globalGGobjs)>0)
+            ggpairsObj <- putPlot(ggpairsObj, panel+ globalGGobjs, p1, p2)
         }
     }
     ggpairsObj
@@ -172,16 +175,18 @@ addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), 
 ##' @param lc object of class 'LinearClassifier'
 ##' @param genesToShow number of bi-plot vectors to show?
 ##' @param expand scaling factor of bi-plot vectors
+##' @param where character vector, one or more of "upper" or "lower"
 ##' @param ... additional arguments passed to ggplot
 ##' @return modified ggpairs object, which can be plotted by evaluating it.
 ##' @importFrom GGally getPlot putPlot
 ##' @importFrom grid unit arrow
 ##' @export
 ##' @seealso \link{doLDA}, \link{doGLMnet}
-annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, ...){
+annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, where='lower', ...){
     ## Precondition: lower triangle contains scatter plots
     ## and possibly some condition on the order of the scatter plots and lc
     dims <- match(colnames(lc), names(ggpairsObj$data)[ggpairsObj$columns])
+    where <- match.arg(where, c('upper', 'lower'), several.ok=TRUE)
     for(d1Idx in seq_along(dims)[-length(dims)]){ #gives index in terms of lc
         d1 <- dims[d1Idx]               #gives index in terms of ggpairs
         for(d2Idx in seq(d1Idx+1, length(dims))){
@@ -198,9 +203,19 @@ annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, ...){
             gc <- gc*scale*expand
             gc$id <- row.names(gc)
             gcNames <- names(gc)
-            gp <- gp+ geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[1], yend=gcNames[2], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...)+ geom_text(data=gc, aes_string(x=gcNames[1], y=gcNames[2], col=NULL, shape=NULL, label="id"), col='black', size=2.5, ...)
-            ggpairsObj <- putPlot(ggpairsObj, gp, d2, d1)
+            gcTrans <- c(gcNames[2], gcNames[1])
+           
+            if('lower' %in% where){
+                 segs <- list(geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[1], yend=gcNames[2], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y=gcNames[2], col=NULL, shape=NULL, label="id"), col='black', size=2.5, ...))
+                ggpairsObj <- putPlot(ggpairsObj, gp + segs, d2, d1)
+            }
+            if('upper' %in% where){
+                 segs <- list(geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[2], yend=gcNames[1], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[2], y=gcNames[1], col=NULL, shape=NULL, label="id"), col='black', size=2.5, ...))
+                gp <- getPlot(ggpairsObj, d1, d2)
+                ggpairsObj <- putPlot(ggpairsObj, gp + segs, d1, d2)
+            }
         }
     }
     ggpairsObj
 }
+
