@@ -2,27 +2,28 @@ Package: SingleCellAnalysis
 Type: Package
 Title: Tools for Analysis of Zero-Inflated, Continuous Data
 Description: Utility functions for plotting and summarizing Single Cell
-    Expression Data
+ Expression Data
 Version: 0.3
 Author: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Maintainer: Andrew McDavid <andrew.n.mcdavid@gmail.com>
-Depends:
-    R (>= 3.0.1)
+Depends: 
+ R (>= 3.0.1)
 License: GPL-3
 LazyData: true
-Imports:
-    glmnet,
-    stringr,
-    SingleCellAssay (>= 0.71),
-    gplots,
-    RColorBrewer,
-    igraph,
-    abind,
-    plyr,
-    reshape,
-    proto,
-    GGally,
-    MASS,
-    brglm,
-    ggplot2,
-    Matrix
+Imports: 
+ glmnet,
+ stringr,
+ SingleCellAssay (>= 0.71),
+ gplots,
+ RColorBrewer,
+ igraph,
+ abind,
+ plyr,
+ reshape,
+ proto,
+ GGally,
+ MASS,
+ brglm,
+ ggplot2,
+ Matrix
+Suggests: testthat
