@@ -8,102 +8,172 @@
 ##' @param sc SingleCellAssay object on a thresholded layer
 ##' @param additive.effects character vector, possibly using formula syntax of columns from \code{cData(sc)} to be included as unpenalized terms.
 ##' @param min.freq genes below this frequency are excluded as predictors and dependent variables
-##' @param gene.predictors one of 'zero.inflated' or 'hurdle'.  See details.
+##' @param gene.predictors ignored
 ##' @param precenter How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 ##' When precenter=TRUE, cv.glmnet will not standardize.
 ##' @param precenter.fun a function called to center the expression matrix prior to calling glmnet
 ##' @param response a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression'
+##' @param modelSelector a function called gene and component-wise on each fit, that should return an index to the glmnet lambda sequence for that gene and component
+##' @param onlyReturnFitter if TRUE, return an undocumented fitter function that is internally called on each gene/component.
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
-fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', ...){
-    gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
-    response <- match.arg(response, c('hurdle', 'zero.inflated'))
+fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, ...){
+    ## gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
+    response <- match.arg(response, c('hurdle', 'zero.inflated', 'cg.regression',  'cg.regression2'))
     sub <- sc[, freq(sc)>min.freq]
     genes <- fData(sub)$primerid
+    ngenes <- length(genes)
 
     ## Additive (un-penalized) variables named from cData
-    additive.mat <- model.matrix(as.formula(sprintf('~ %s', paste(additive.effects, collapse='+'))), cData(sub))[, -1, drop=FALSE] #no intercept
+    additive.mat <- model.matrix(as.formula(sprintf('~ %s', paste(additive.effects, collapse='+')), env=parent.frame()), cData(sub))[, -1, drop=FALSE] #no intercept
     additive.dim <- ncol(additive.mat)
-        
 
-    ## Untested code to decompose predictors into continuous/dichtomous
-    if(gene.predictors == 'hurdle'){
-        genes.appear <- 2
-        ## Additive effects, then centered continuous, then dichotomous
-        model.mat <- as.matrix(cbind(additive.mat,
-                                     as.data.frame(xform(exprs(sub))), as.data.frame(exprs(sub)>0)))
-    } else if(gene.predictors == 'zero.inflated'){
-        ## Additive effects, then zero inflated genes
-        model.mat <- as.matrix(cbind(additive.mat, as.data.frame(exprs(sub))))
-        genes.appear <- 1
-    } 
-    
-    if(precenter)
+    ## transform expression and generate design
+    expr <- exprs(sub)
+    if(response == 'cg.regression2'){
+        expr <- xform(expr)
+    }
+
+    model.mat <- as.matrix(cbind(additive.mat, as.data.frame(expr)))
+    model.mat.zero <- as.matrix(cbind(additive.mat, as.data.frame(1*(exprs(sub)>0))))
+
+    if(precenter){
         model.mat <- precenter.fun(model.mat)
+        model.mat.zero <- precenter.fun(model.mat.zero)
+    }
 
     ## Holds output from glmnet
     fits <- vector(mode='list', length=2*length(genes))
-    sigma <- nobs <- lambda <- lambda0 <- rep(NA, length=2*length(genes))
-    dim(sigma) <- dim(nobs) <- dim(lambda) <- dim(lambda0) <- dim(fits) <- c(length(genes), 2)
-    dimnames(sigma) <- dimnames(nobs) <- dimnames(lambda) <- dimnames(lambda0) <- dimnames(fits) <- list(primerid=genes, type=c('dichotomous', 'continuous'))
+    sigma2 <- nobs <- lambda <- lambda0 <- rep(NA, length=2*length(genes))
+    dim(sigma2) <- dim(nobs) <- dim(lambda) <- dim(lambda0) <- dim(fits) <- c(length(genes), 2)
+    dimnames(sigma2) <- dimnames(nobs) <- dimnames(lambda) <- dimnames(lambda0) <- dimnames(fits) <- list(primerid=genes, type=c('dichotomous', 'continuous'))
+    pf<-rep(c(0, 1), times=c(additive.dim, ngenes-1))
 
-    ## Begin loop thru genes
-    for(i in seq_along(genes)){
-        this.gene <- fData(sub)$primerid[i]
-        y.zif <- exprs(sub)[,i]
+    ## called for each gene/component
+    glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, component, fits, lambda, sigma2, ...){
         y.dichot <- y.zif>0
-        y.real <- exprs(sub)[,i][y.dichot]
-        genes.diff <- setdiff(genes, this.gene)
-        ## remove response gene from design
-        this.gene.idx <- seq(from=i, by=length(genes), length.out=genes.appear)
-        this.model <- model.mat[,-this.gene.idx-additive.dim]
-        
-        penalty.factor<-rep(c(0, 1), times=c(additive.dim, genes.appear*length(genes.diff)))
-        if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
-        tt <- try({
-            if(response == 'hurdle'){
-            fit.dichot <- cv.glmnet(this.model, y.dichot, family='binomial', penalty.factor=penalty.factor, standardize=!precenter, ...)
-        } else if(response=='cg.regression'){
+        y.real <- y.zif[y.dichot]
+        if(component=='continuous'){
+            family <- 'gaussian'
+        } else{
+            family <- 'binomial'
+        }
 
-        }else if(response == 'zero.inflated'){
-            fit.dichot <- cv.glmnet(this.model, y.zif, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
-            fit.real <- fit.dichot
-            }
-            fits[[i, 'dichotomous']] <- if(fit.dichot$glmnet.fit$jerr==-1 || min(fit.dichot$glmnet.fit$lambda) > 1e2 ) NULL else fit.dichot
-            lambda[i,'dichotomous'] <- fit.dichot$lambda.min[1]
-            lambda0[i, 'dichotomous'] <- fit.dichot$glmnet.fit$lambda[1]
-            nobs.d <- nrow(this.model)
-            nobs[i, 'dichotomous'] <- nobs.d
-            my <- mean(y.dichot)
-            sigma[i, 'dichotomous'] <- my*(1-my)
+        off <- NA
+        ## Gaussian
+        if(family=='gaussian' && response %in% c('hurdle', 'cg.regresssion')){
+            fit <- glmnet(this.model[y.dichot,], y.real, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            nobs <- length(y.real)
+        } else if(family=='gaussian' && response == 'cg.regression2'){
+            pf <- c(pf, rep(1, ngenes))
+            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real-mean(y.real), family=family, standardize=!precenter, ...)
 
-            nobs.c <- length(y.real)
-            sigma.y <- var(y.real)
-            nobs[i, 'continuous'] <- nobs.c 
-            sigma[i, 'continuous'] <- sigma.y
-            wy <- nobs.c/(nobs.d*sigma.y)
-            if(response=='hurdle') fit.real <- cv.glmnet(this.model[y.dichot,], y.real, family='gaussian', penalty.factor=penalty.factor, standardize=!precenter, ...)
-            ## set things to null if we didn't converge rather than return empty fit
-            fits[[i, 'continuous']] <- if(fit.real$glmnet.fit$jerr==-1 || min(fit.real$glmnet.fit$lambda) > 1e2 ) NULL else fit.real
-            lambda[i,'continuous'] <- fit.real$lambda.min[1]
-            lambda0[i, 'continuous'] <- fit.real$glmnet.fit$lambda[1]
-        })
-        if(class(tt) == 'try-error') warning(sprintf('There was an error with gene %s', this.gene))
-        message(this.gene, '\n')
+            nobs <- length(y.real)
+        }else if(family=='gaussian' && response =='zero.inflated'){
+            fit <- glmnet(this.model, y.zif, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            nobs <- length(y.zif)
+        } else if(family=='binomial' && response == 'hurdle'){
+            fit <- glmnet(this.model, y.dichot, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            nobs <- length(y.dichot)
+        } else if(family=='binomial' && response == 'zero.inflated'){
+            fit <- fits[[this.gene, 'continuous']]
+            nobs <- length(y.dichot)
+        } else if(family=='binomial' && response %in% c('cg.regression', 'cg.regression2')){
+            nobs <- length(y.dichot)
+            fit.c <- fits[[this.gene, 'continuous']]
+            if(is.null(fit.c)) stop('Empty continuous fit')
+            l.cont <- lambda[this.gene, 'continuous']
+            Kbb <- 1/sigma2[this.gene, 'continuous']
+
+            ## calculate offset given lambda
+            coef.c <- as.numeric(coef(fit.c, s=l.cont))
+            newx <- if(response =='cg.regression') this.model else cbind(this.model, this.model.zero[,-seq_len(additive.dim)])
+            cont.fitted <- predict(fit.c, s=l.cont, newx=newx)
+            #Hb <- coef.c[1]*Kbb    #Intercept times precision
+            #Kba <- as.matrix(-coef.c[-1]*Kbb) #others times -precision
+            
+            off <- Kbb*cont.fitted^2/2
+            #fitted2 <- this.model %*% Kba
+            #off2 <- (fitted2^2/2 -fitted2)/(Kbb*Hb)
+            off <- off-mean(off)
+            fit <- glmnet(this.model.zero, y.dichot, family=family, offset=off, standardize=!precenter, ...)
+
+            df <- data.frame(fit=drop(cont.fitted), pos=factor(y.dichot), off=drop(off))
+            #aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density()
+            #bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
+            
+        }
+        l.idx <- modelSelector(fit, ngenes=ngenes)
+        sigma2 <- (1-fit$dev.ratio)*fit$nulldev/nobs
+        structure(fit, nobs=nobs, sigma2=sigma2[l.idx], selectedLambda=fit$lambda[l.idx], off=off)
     }
 
-    structure(fits, genes=genes, gene.predictors=gene.predictors, additive.dim=additive.dim, lambda=lambda, lambda0=lambda0, nobs=nobs, sigma=sigma, response=response)
+    if(onlyReturnFitter) return(glmnetFit)
+    
+    ## Loop through components
+    for(j in c('continuous', 'dichotomous')){
+        ## Begin loop thru genes
+        for(i in seq_along(genes)){
+            this.gene <- fData(sub)$primerid[i]
+            y.zif <- exprs(sub)[,i]
+            ## remove response gene from design
+            this.gene.idx <- i
+            this.model <- model.mat[,-this.gene.idx-additive.dim]
+            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim]
+            if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
+            tt <- try({
+                this.fit <- glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)               
+                lambda[i,j] <- attr(this.fit, 'selectedLambda')
+                lambda0[i,j] <- this.fit$lambda[1]
+                nobs[i, j] <- attr(this.fit, 'nobs')
+                sigma2[i, j] <- attr(this.fit, 'sigma2')
+
+            })
+            ## recover from glmnet errors or non-convergence
+            if(class(tt) == 'try-error' || this.fit$jerr==-1 || min(this.fit$lambda) > 1e2 ){
+                warning(sprintf('There was an error with gene %s', this.gene))
+            } else{
+                fits[[i,j]] <- this.fit
+            }
+            message(this.gene, '\n')
+        }                               #end gene loop
+    }                                   #end component loop
+
+    structure(fits, genes=genes, gene.predictors=gene.predictors, response=response,additive.dim=additive.dim, lambda=lambda, lambda0=lambda0, nobs=nobs, sigma2=sigma2, response=response, class=c('FittedZifNetwork', 'class'))
 }
 
-## Alternately: factor out looping code as function
-## needs to write to lambda, lambda0, nobs, etc
+nullSelector <- function(fit, ngenes){
+    c(l.idx=1)
+}
+
+bicSelector <- function(fit, ngenes, ebic.lambda=1){
+    l <- fit$lambda
+    fixed <- fit$df[which.max(l)]
+    nnz <- fit$df-fixed
+    ndev <- (1-fit$dev.ratio)*fit$nulldev
+    bic <- ndev+nnz*log(fit$nobs) + 2*ebic.lambda*nnz*log(ngenes)
+    l.idx <- which.min(bic)
+    c(l.idx=l.idx)
+}
 
 
-
+##' Derive global properties of network fit
+##'
+##' .. content for \details{} ..
+##' @param fits \code{fitZifNetwork} object
+##' @param lc.range optional
+##' @param ld.range optional
+##' @param nknots 
+##' @param ebic.lambda lambda penalty for extended Bayesian Info Crit. (Rigel and Drton)
+##' @return list with entries \code{fortified}, \code{norm.grid}, \code{native.path}
+##' fortified and native.path are both data.frames with entries for each primerid, containing statistics of the fit as lambda varies.
+##' fortified has cartesian product of continuous lambda values and discrete, over the same grid for each gene.
+##' native.path has 
+##' @import reshape
 fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=0){
-    sigma <- rename(cast(melt(attr(fits, 'sigma')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
+    sigma <- rename(cast(melt(attr(fits, 'sigma2')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
     null <- is.na(attr(fits, 'nobs')[,1])
     cv.fit <- fits[!null,]
     genes <- attr(fits, 'genes')[!null]
@@ -117,10 +187,10 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
 
     if(missing(lc.range) || missing(ld.range)){
          L.Dmax <- max(attr(fits, 'lambda0')[,1], na.rm=TRUE)
-         L.Dmin <- quantile(attr(fits, 'lambda')[,1], na.rm=TRUE, probs=.1)
+         L.Dmin <- quantile(attr(fits, 'lambda')[,1], na.rm=TRUE, probs=.5)
 
          L.Cmax <- max(attr(fits, 'lambda0')[,2], na.rm=TRUE)
-         L.Cmin <- quantile(attr(fits, 'lambda')[,2], na.rm=TRUE, probs=.1)
+         L.Cmin <- quantile(attr(fits, 'lambda')[,2], na.rm=TRUE, probs=.5)
          ld.range <- c(L.Dmin, L.Dmax)
          lc.range <- c(L.Cmin, L.Cmax)
          message(sprintf('Guessing `lc.range`=[%f, %f] and `ld.range`=[%f, %f]', L.Cmin, L.Cmax, L.Dmin, L.Dmax))
@@ -132,7 +202,7 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
     knots.d <- seq(from=ld.range[1], to=ld.range[2], length=nknots)
     
     for(g in seq_len(nrow(cv.fit))){
-        twofit <- list(cv.fit[[g,1]]$glmnet.fit, cv.fit[[g,2]]$glmnet.fit)
+        twofit <- list(cv.fit[[g,1]], cv.fit[[g,2]])
         nobs.d <- twofit[[1]]$nobs
         nobs.c <- twofit[[2]]$nobs
         ndev.d <- (1-twofit[[1]]$dev.ratio)*twofit[[1]]$nulldev
@@ -159,26 +229,7 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
         norm.d <- approx(l.d, norm.d, knots.d, rule=2)$y
         norm.c <- approx(l.c, norm.c, knots.c, rule=2)$y
         ndev.d <- approx(l.d, ndev.d, knots.d, rule=2)$y
-        ndev.c <- approx(l.c, ndev.c, knots.c, rule=2)$y
-
-        ## coef.d <- as.matrix(coef(twofit[[1]], s=l.d))
-        ## coef.c <- as.matrix(coef(twofit[[2]], s=l.c))
-        ## things.to.estimate <- c('grp.l1', 'comb.l1', 'ndev.comb')
-        ## comb.norm <- array(NA, dim=c(ncol(coef.d), ncol(coef.c), length(things.to.estimate)), dimnames=list(l.d=l.d, l.c=l.c, estimand=things.to.estimate))
-        
-        ## fixed.plus.intercept <- fixed.c+1
-        ## for(i in seq_len(ncol(coef.d))){
-        ##     for(j in seq_len(ncol(coef.c))){
-        ##         cd <- coef.d[-seq_len(fixed.plus.intercept),i]
-        ##         cc <- coef.c[-seq_len(fixed.plus.intercept),j]
-        ##         comb.norm[i,j, 'grp.l1'] <- sum(sqrt(cc^2 + cd^2))
-        ##         comb.norm[i, j, 'comb.l1'] <- sum(abs(cc)+abs(cd))
-        ##         comb.norm[i,j,'ndev.comb'] <- ndev.d[i]+ndev.c[j]
-        ##     }
-        ## }
-        ## grp.norm.list[[g]] <-cbind(cast(melt(comb.norm), ...~estimand, fun.aggregate='[', x=1), primerid=genes[g], stringsAsFactors=FALSE) #fun.aggregate='[' because we might have duplicate lambda is we're on the boundary
-
-        
+        ndev.c <- approx(l.c, ndev.c, knots.c, rule=2)$y        
         nnz.d <- approx(l.d, nnz.d, knots.d, method='constant', rule=2)$y
         nnz.c <- approx(l.c, nnz.c, knots.c, method='constant', rule=2)$y
         l.d <- approx(l.d, l.d, knots.d, rule=2)$y
@@ -190,73 +241,85 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
     }
     fortified <- merge(sigma, do.call(rbind, out))
     native.path <- do.call(rbind, out.nativepath)
-    #norm.grid <- do.call(rbind, grp.norm.list)
-    
     
     list(fortified=fortified, norm.grid=NA, native.path=native.path)
         
         }
 
+## lof = list of fits from fitZifNetwork
+coefLayer <- function(lof, s, layer){
+    genes <- attr(lof, 'genes')
+    ngenes <- length(genes)
+    add <- attr(lof, 'additive.dim') +1 #intercept
+    stopifnot(length(s)==ngenes)
+    stopifnot(length(layer)==1)
+    out <- matrix(0, nrow=ngenes, ncol=ngenes, dimnames=list(genes, genes))
+    if(is.integer(layer)){
+        layer <- c('cont', 'disc', 'cont2')[layer]
+        warning('Assuming layer is ', paste(layer, collapse=','))
+    }
+
+    ngenesNotSelf <- ngenes-1#because response gene is always omitted
+    coefIdx <- 1:(ngenesNotSelf)+add  
+    if(layer=='cont'){
+        comp <- 'continuous'
+        } else if(layer=='cont2'){
+            comp <- 'continuous'
+            stopifnot(attr(lof, 'response')=='cg.regression2')
+            coefIdx <- coefIdx + ngenesNotSelf
+        } else if(layer=='disc'){
+            comp <- 'dichotomous'
+        }
+
+    for(i in seq_along(genes)){
+        co <- coef(lof[[i,comp]], s=s[i])
+        rn <- row.names(co)
+        co <- setNames(as.numeric(co), rn)
+        stopifnot(all(genes[-i] == names(co)[coefIdx]))
+        out[,i][-i] <- co[coefIdx]
+    }
+    out
+}
 
 ##' Put coefficients from a set of network regressions into a matrix/array
 ##'
-##' The array is ngenes X ngenes X {2,4}, with the last dimension depending
-##' on whether zero-inflated or hurdle predictors were used.
+##' The array is ngenes X ngenes X {2,3}, with the last dimension depending
+##' on whether zero-inflated or cg.regression2 predictors were used.
 ##' @param listOfFits output from fitZifNetwork
-##' @param l.c continuous lambda value
-##' @param l.d discrete lambda value
+##' @param l.c continuous lambda value, if missing use lambda attribute from listofFits
+##' @param l.d discrete lambda value, see l.c
 ##' @param collapse should the network be collapsed between layers?
 ##' @param union currently ignored
 ##' @param layers upon which layers in the listOfFits should we operate (eg, discrete, continuous or both)
 ##' @return an array
 getZifNetwork <- function(listOfFits, l.c, l.d, collapse=FALSE, union=TRUE, layers){
     genes <- dimnames(listOfFits)[['primerid']]
-    gene.predictors <- attr(listOfFits, 'gene.predictors')
+    response <- attr(listOfFits, 'response')
     additive.dim <- attr(listOfFits, 'additive.dim')
-    if(missing(layers)) layers <- seq_len(dim(listOfFits)[2])
+    lambda <- attr(listOfFits, 'lambda')
 
-    if(length(l.c) == 1){
+    if(missing(l.c)){
+        l.c <- lambda[,'continuous']
+    } else if(length(l.c)==1){
         message("Taking 'l.c' to be constant over genes")
         l.c <- rep(l.c, length(genes))
-    }
+     }
 
-    if(length(l.d) == 1){
+    if(missing(l.d)){
+        l.d <- lambda[,'dichotomous']
+    }else if(length(l.d)==1){
         message("Taking 'l.d' to be constant over genes")
         l.d <- rep(l.d, length(genes))
     }
 
-
-    if(gene.predictors=='hurdle'){
-         out <- array(0, c(length(genes), length(genes), 4), dimnames=list(genes, genes, c('di.cont', 'di.di', 'cont.di', 'cont.cont')))
-         genes.appear <- 2
-    } else if(gene.predictors=='zero.inflated'){
-         out <- array(0, c(length(genes), length(genes), 2), dimnames=list(genes, genes, c('di', 'cont')))
-         genes.appear <- 1
-    }
-
-    ## Genes X component
-
-    lambdaList <- attr(listOfFits, 'lambda')
+    if(missing(layers)) layers <- c('cont', 'disc')
+    out <- array(0, c(length(genes), length(genes), length(layers)), dimnames=list(genes, genes, layers))
     
-    for( i in seq_along(genes)){
-        this.gene <- genes[i]
-        genes.diff <- setdiff(genes, this.gene)
         for(j in layers){
-            this.comp <- dimnames(listOfFits)[[2]][j]
-            this.lambda <- if(this.comp =='continuous') l.c[i] else l.d[i]
-            if(!is.null(listOfFits[[i, j]]) && length(this.lambda)>0){
-
-                ## kill intercept
-                coeft <- as.numeric(coef(listOfFits[[i,j]], s=this.lambda))[-(1:(additive.dim+1))]
-                coeft <- ifelse(abs(coeft)<1e-3, 0, coeft)
-                check <- sum(abs(coeft))
-                #browser(expr=check>1.5*constraint)
-                out[i,match(genes.diff, genes),(j-1)*genes.appear+1] <- coeft[1:(length(genes.diff))]
-                if(gene.predictors=='hurdle')  out[i,match(genes.diff, genes),(j-1)*genes.appear+2] <- coeft[(length(genes.diff)+1):(2*length(genes.diff))]
-            }
+            this.lambda <- if(j %in% c('cont', 'cont2')) l.c else l.d
+            out[,,j] <- coefLayer(listOfFits, s=this.lambda, layer=j)
         }
-    }
-                                 # penalty.factor=penalty.factor)
+
         out[is.na(out)] <- 0
     if(collapse){
         ## Take union of layers 
