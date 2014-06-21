@@ -8,9 +8,9 @@ getZifNetwork(listOfFits, l.c, l.d, collapse = FALSE, union = TRUE, layers)
 \arguments{
 \item{listOfFits}{output from fitZifNetwork}
 
-\item{l.c}{continuous lambda value}
+\item{l.c}{continuous lambda value, if missing use lambda attribute from listofFits}
 
-\item{l.d}{discrete lambda value}
+\item{l.d}{discrete lambda value, see l.c}
 
 \item{collapse}{should the network be collapsed between layers?}
 
@@ -22,7 +22,7 @@ getZifNetwork(listOfFits, l.c, l.d, collapse = FALSE, union = TRUE, layers)
 an array
 }
 \description{
-The array is ngenes X ngenes X {2,4}, with the last dimension depending
-on whether zero-inflated or hurdle predictors were used.
+The array is ngenes X ngenes X {2,3}, with the last dimension depending
+on whether zero-inflated or cg.regression2 predictors were used.
 }
 

@@ -4,7 +4,7 @@
 \title{Add an confidence ellipses or other features to a ggpairs object}
 \usage{
 addEllipse(ggpairsObj, panels, ellipseArgList = list(lwd = 1, alpha = 1),
-  pointsArgList = list())
+  pointsArgList = list(), globalGGobjs = list())
 }
 \arguments{
 \item{ggpairsObj}{output from ggpairs}
@@ -14,6 +14,8 @@ addEllipse(ggpairsObj, panels, ellipseArgList = list(lwd = 1, alpha = 1),
 \item{ellipseArgList}{list of ggplot aesthetics to be set to fixed values for the ellipses, eg, \code{lwd} or \code{alpha}}
 
 \item{pointsArgList}{list of ggplot aesthetics to be rewritten for the purposes of calling geom point, eg, \code{size} or \code{alpha}}
+
+\item{globalGGobjs}{vector of ggplot2 theme or scale elements}
 }
 \value{
 ggpairs object with modified panels
@@ -21,5 +23,6 @@ ggpairs object with modified panels
 \description{
 This function is necessary because there is no way to set aesthetics in ggpairs for only a portion of the plot matrix.
 If ellipseArgList is empty, then no ellipses will be drawn.
+If globalGGobjs is non-empty, then it will be added (+) to each panel.  You might use this to alter the color scale
 }
 

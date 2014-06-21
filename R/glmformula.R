@@ -1,4 +1,3 @@
-## ##' @importFrom glmnet cv.glmnet
 ## setGeneric('cv.glmnet',  function(x, y, ...) standardGeneric('cv.glmnet'))
 
 ## contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
@@ -17,7 +16,7 @@
 ## ##' @param y data.frame or environment in which \code{x} is evaluated
 ## ##' @param ... arguments passed to cv.glmnet
 ## ##' @return see cv.glmnet
-## ##' @export
+## ## @export
 ## setMethod('cv.glmnet', signature='formula', function(x, y, ...){
 ##   family <- list(...)$family
 ##   subset <- list(...)$subset
@@ -53,8 +52,8 @@
 ##' @param pen.scale.interaction multiply the l1 penalty by this factor if interactions are included
 ##' @param precenter should the gene predictors be centered? Recommended if there are interactions present to reduce co-linearity of the interaction with the marginal term.
 ##' @param prescale should the gene predictors be scaled to have unit variance?
-##' @param addn a data frame of nrow(sca) giving additional predictors to be added to the design
-##' @param addn.penalty an optional vector of length ncol(addn) giving the relative scale of the penalty for add
+##' @param addn character vector, giving additional columns of design, interpreted in the context of cData(sca)
+##' @param addn.penalty an optional numeric giving the relative scale of the penalty for add
 ##' @param user.mm a function to be applied to exprs(sca) instead of the defaults given by \code{predictor}
 ##' @param alpha elasticnet penalty parameter. Default =.9.
 ##' @param only.mm Should only the model matrix be returned, rather than actually calling cv.glmnet?
@@ -65,7 +64,7 @@
 ##' @importFrom Matrix cBind
 ##' @import glmnet
 ##' @import stringr
-glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), pen.scale.interaction=2, precenter=FALSE, prescale=FALSE, addn, addn.penalty, user.mm, alpha=.9, only.mm=FALSE, ...){
+glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), pen.scale.interaction=2, precenter=FALSE, prescale=FALSE, addn=NULL, addn.penalty=0, user.mm, alpha=.9, only.mm=FALSE, ...){
   predOpts <-  c('dichotomous', 'continuous', 'interaction', 'user')
   predictor <- match.arg(predictor, predOpts, several.ok=TRUE)
   sel <- freq(sca) > min.freq & (1-freq(sca)) > min.freq
@@ -84,7 +83,7 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   names(df) <- make.names(c(paste(colnames(ee), 'd', sep='.'), paste(colnames(ee), 'c', sep='.')))
   
   ## select indices of desired predictors
-  idx <- list(1:ngenes, (ngenes+1):(2*ngenes) )[match(predictor, predOpts)]
+  idx <- list(1:ngenes, (ngenes+1):(2*ngenes) )[match(predictor, c('dichotomous', 'continuous'))]
   idx <- do.call(c, idx)
   df <- df[,idx]
  if('interaction' %in% predictor){
@@ -97,24 +96,32 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   if(length(levels(resp))>2)
     fam <- 'multinomial'
 
+
+  ## df <- cbind(df, cData(sca))
+  
   if('user' %in% predictor){
       mm <- user.mm(df)[,-1]
   } else{
   mm <- model.matrix(formula(form), df)[, -1]
 }
-  if(!missing(addn)){
-      mm <- cbind(mm, addn)
-}
+  
   pf <- rep(1, ncol(mm))
   if('interaction' %in% predictor){
       interIdx <- str_detect(colnames(mm), fixed(':'))
       pf[interIdx] <- pf[interIdx]*pen.scale.interaction
   }
 
-      
-  if(!missing(addn.penalty)){
-  pf <- c(pf, addn.penalty)
+
+    if(!is.null(addn)){
+      addn <- model.matrix(formula(paste0('~', addn)), cData(sca))
+      pf <- c(pf, rep(addn.penalty, ncol(addn)))
+      additive.dim <- seq(from=ncol(mm)+1, length.out=ncol(addn))
+      mm <- cbind(mm, addn)
+} else{
+    additive.dim <- 0
 }
+
+
 
   mm <- mm[!is.na(resp),]
   resp <- resp[!is.na(resp)]
@@ -122,7 +129,7 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   if(only.mm) return(list(mm=mm, resp=resp))
   message('Calling cv.glmnet on ',  ncol(mm), ' predictors and ', nrow(mm), ' cells')
   fit <- cv.glmnet(mm, resp,  family=fam, alpha=alpha, penalty.factor=pf, ...)
-  list(cv.fit=fit, mm=mm, response=resp, sca=sca)
+  list(cv.fit=fit, mm=mm, response=resp, sca=sca, additive.dim=additive.dim)
 }
 
 ## predict response in glmsca using model model matrix in glmsca
@@ -152,17 +159,20 @@ glmMisclass <- function(glmsca, alt.fit, groups, s='lambda.min'){
   invisible(list(confusion=tab, errorRate=correct.class))
 }
 
-.sparseGlmToMat <- function(fit, s='lambda.1se'){
-    scores <- coef(fit, s=s)
+.sparseGlmToMat <- function(glmsca, s='lambda.1se', additive=TRUE){
+    scores <- coef(glmsca$cv.fit, s=s)
     Scores <- do.call(cBind, scores)[-1,] #No intercept
+    if(!additive && all(glmsca$additive.dim>0)){
+        Scores <- Scores[-glmsca$additive.dim,]
+}
     nz <- apply(abs(Scores)>1e-3, 1, any)
     Scores <- as.matrix(Scores[nz,])
     colnames(Scores) <- names(scores)
     Scores
 }
 
-getNZDesign <- function(glmsca, s='lambda.1se'){
-    scores <- .sparseGlmToMat(glmsca$cv.fit)
+getNZDesign <- function(glmsca, s='lambda.1se', additive=TRUE){
+    scores <- .sparseGlmToMat(glmsca, s=s, additive)
     nz <- row.names(scores)
     glmsca$mm[,nz]
 }

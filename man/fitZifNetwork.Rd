@@ -5,7 +5,8 @@
 \usage{
 fitZifNetwork(sc, additive.effects, min.freq = 0.05,
   gene.predictors = "zero.inflated", precenter = TRUE,
-  precenter.fun = scale, response = "hurdle", ...)
+  precenter.fun = scale, response = "hurdle", modelSelector,
+  onlyReturnFitter = FALSE, ...)
 }
 \arguments{
 \item{sc}{SingleCellAssay object on a thresholded layer}
@@ -14,14 +15,18 @@ fitZifNetwork(sc, additive.effects, min.freq = 0.05,
 
 \item{min.freq}{genes below this frequency are excluded as predictors and dependent variables}
 
-\item{gene.predictors}{one of 'zero.inflated' or 'hurdle'.  See details.}
+\item{gene.predictors}{ignored}
 
 \item{precenter}{How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 When precenter=TRUE, cv.glmnet will not standardize.}
 
 \item{precenter.fun}{a function called to center the expression matrix prior to calling glmnet}
 
-\item{response}{a character vector, one of 'zero.inflated' or 'hurdle'}
+\item{response}{a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression'}
+
+\item{modelSelector}{a function called gene and component-wise on each fit, that should return an index to the glmnet lambda sequence for that gene and component}
+
+\item{onlyReturnFitter}{if TRUE, return an undocumented fitter function that is internally called on each gene/component.}
 
 \item{...}{passed to cv.glmnet}
 }

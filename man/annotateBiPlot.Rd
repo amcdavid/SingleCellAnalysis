@@ -3,7 +3,8 @@
 \alias{annotateBiPlot}
 \title{Add bi-plot vectors onto a ggpairs scatter plot of classifiers}
 \usage{
-annotateBiPlot(ggpairsObj, lc, genesToShow = 5, expand = 1, ...)
+annotateBiPlot(ggpairsObj, lc, genesToShow = 5, expand = 1,
+  where = "lower", ...)
 }
 \arguments{
 \item{ggpairsObj}{output from a call to 'ggpairs'}
@@ -13,6 +14,8 @@ annotateBiPlot(ggpairsObj, lc, genesToShow = 5, expand = 1, ...)
 \item{genesToShow}{number of bi-plot vectors to show?}
 
 \item{expand}{scaling factor of bi-plot vectors}
+
+\item{where}{character vector, one or more of "upper" or "lower"}
 
 \item{...}{additional arguments passed to ggplot}
 }

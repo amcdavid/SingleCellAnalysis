@@ -78,7 +78,7 @@ doLDA <- function(train, predict, grouping, Layer='lCount'){
 ##' @export
 doGLMnet <- function(train, predict, s='lambda.1se'){
     pX <- predict(train$cv.fit, predict$mm, s=s)
-    Scores <- .sparseGlmToMat(train$cv.fit)
+    Scores <- .sparseGlmToMat(train, s=s, additive=FALSE)
     cls <- structure(drop(pX), cData=cData(predict$sca), scores=Scores)
     class(cls) <- c('LinearClassifier', 'matrix')
     prepClassifier(cls)
