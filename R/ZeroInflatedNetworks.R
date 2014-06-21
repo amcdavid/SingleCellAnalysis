@@ -32,7 +32,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
     ## transform expression and generate design
     expr <- exprs(sub)
-    if(response == 'cg.regression2'){
+    if(response %in% c('cg.regression', 'cg.regression2')){
         expr <- xform(expr)
     }
 
@@ -63,13 +63,15 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
         off <- NA
         ## Gaussian
-        if(family=='gaussian' && response %in% c('hurdle', 'cg.regresssion')){
+        if(family=='gaussian' && response %in% 'hurdle'){
             fit <- glmnet(this.model[y.dichot,], y.real, family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression2'){
             pf <- c(pf, rep(1, ngenes))
-            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real-mean(y.real), family=family, standardize=!precenter, ...)
-
+            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real-mean(y.real), family=family, standardize=!precenter, penalty.factor=pf, ...)
+            nobs <- length(y.real)
+        } else if(family=='gaussian' && response == 'cg.regression'){
+            fit <- glmnet(this.model[y.dichot,], y.real-mean(y.real), family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.real)
         }else if(family=='gaussian' && response =='zero.inflated'){
             fit <- glmnet(this.model, y.zif, family=family, penalty.factor=pf, standardize=!precenter, ...)
@@ -93,16 +95,21 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             cont.fitted <- predict(fit.c, s=l.cont, newx=newx)
             #Hb <- coef.c[1]*Kbb    #Intercept times precision
             #Kba <- as.matrix(-coef.c[-1]*Kbb) #others times -precision
-            
+
             off <- Kbb*cont.fitted^2/2
             #fitted2 <- this.model %*% Kba
             #off2 <- (fitted2^2/2 -fitted2)/(Kbb*Hb)
-            off <- off-mean(off)
-            fit <- glmnet(this.model.zero, y.dichot, family=family, offset=off, standardize=!precenter, ...)
+            offt <- off-mean(off)
+            offt[offt < 2*-1] <- -2
+            offt[offt > 2] <- 2
+            offt <- offt-mean(offt)
+            message(summary(offt))
+           ## df <- data.frame(fit=drop(cont.fitted), pos=factor(y.dichot), off=drop(off))
+            ## aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density()
+            ## bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
+            ## browser(expr=this.gene=='CXCL1')
+            fit <- glmnet(this.model.zero, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
 
-            df <- data.frame(fit=drop(cont.fitted), pos=factor(y.dichot), off=drop(off))
-            #aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density()
-            #bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
             
         }
         l.idx <- modelSelector(fit, ngenes=ngenes)
@@ -117,6 +124,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         ## Begin loop thru genes
         for(i in seq_along(genes)){
             this.gene <- fData(sub)$primerid[i]
+            message(this.gene)
             y.zif <- exprs(sub)[,i]
             ## remove response gene from design
             this.gene.idx <- i
@@ -125,19 +133,17 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
             tt <- try({
                 this.fit <- glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)               
+            })
+            ## recover from glmnet errors or non-convergence
+            if(class(tt) == 'try-error' || this.fit$jerr==-1 ||  any(!is.finite(this.fit$lambda)) || min(this.fit$lambda) > 1e2){
+                warning(sprintf('There was an error with gene %s', this.gene))
+            } else{
+                fits[[i,j]] <- this.fit
                 lambda[i,j] <- attr(this.fit, 'selectedLambda')
                 lambda0[i,j] <- this.fit$lambda[1]
                 nobs[i, j] <- attr(this.fit, 'nobs')
                 sigma2[i, j] <- attr(this.fit, 'sigma2')
-
-            })
-            ## recover from glmnet errors or non-convergence
-            if(class(tt) == 'try-error' || this.fit$jerr==-1 || min(this.fit$lambda) > 1e2 ){
-                warning(sprintf('There was an error with gene %s', this.gene))
-            } else{
-                fits[[i,j]] <- this.fit
             }
-            message(this.gene, '\n')
         }                               #end gene loop
     }                                   #end component loop
 
@@ -172,9 +178,10 @@ bicSelector <- function(fit, ngenes, ebic.lambda=1){
 ##' fortified has cartesian product of continuous lambda values and discrete, over the same grid for each gene.
 ##' native.path has 
 ##' @import reshape
+##' @import data.table
 fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=0){
-    sigma <- rename(cast(melt(attr(fits, 'sigma2')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
-    null <- is.na(attr(fits, 'nobs')[,1])
+    #sigma <- rename(cast(melt(attr(fits, 'sigma2')), primerid ~ type), c('continuous'='sigma.c', 'dichotomous' = 'sigma.d'))
+    null <- is.na(attr(fits, 'nobs')[,1]) & is.na(attr(fits, 'nobs')[,2])
     cv.fit <- fits[!null,]
     genes <- attr(fits, 'genes')[!null]
 
@@ -183,6 +190,7 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
     ## grp.norm.list: not currently used
     out.nativepath <- grp.norm.list <- out <- vector(mode='list', length=nrow(cv.fit))
     names(grp.norm.list) <- names(out) <- genes
+
 
 
     if(missing(lc.range) || missing(ld.range)){
@@ -198,50 +206,60 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
     
     if(length(lc.range)!=2 || length(ld.range) != 2) stop("'lc.range' and 'ld.range' must both be length 2")
     
-    knots.c <- seq(from=lc.range[1], to=lc.range[2], length=nknots)
-    knots.d <- seq(from=ld.range[1], to=ld.range[2], length=nknots)
+    knots <- list(disc=seq(from=ld.range[1], to=ld.range[2], length=nknots),
+                  cont=seq(from=lc.range[1], to=lc.range[2], length=nknots))
+    comp <- c('disc', 'cont')
+
+    fout <- CJ(primerid=genes, component=c('disc', 'cont'), norm=NA_real_, nnz=NA_real_, l=NA_real_, ndev=NA_real_,  nobs=NA_real_)
+    setkey(fout, component)
+    kout <- data.table(knots=c(knots[['disc']],knots[['cont']]),
+                       component=rep(c('disc', 'cont'), each=nknots))
+    setkey(kout, component)
+    fout <- merge(fout, kout, allow.cartesian=TRUE)
+    setkey(fout, component, primerid)
+    
+    np <- CJ(primerid=genes, component=c('disc', 'cont'), lseq=seq_along(fits[[1,2]]$lambda), lambda=NA_real_, nnz=NA_real_, ndev=NA_real_, bic=NA_real_)    
+    setkey(np, primerid, component, lseq)
     
     for(g in seq_len(nrow(cv.fit))){
         twofit <- list(cv.fit[[g,1]], cv.fit[[g,2]])
-        nobs.d <- twofit[[1]]$nobs
-        nobs.c <- twofit[[2]]$nobs
-        ndev.d <- (1-twofit[[1]]$dev.ratio)*twofit[[1]]$nulldev
-        ndev.c <- (1-twofit[[2]]$dev.ratio)*twofit[[2]]$nulldev
-        fixed.d <-twofit[[1]]$df[1]
-        fixed.c <- twofit[[2]]$df[1]
-        if(fixed.d != fixed.c) warning(sprintf('mismatch between length of fixed predictors in %s', genes[g]))
-        norm.d <- apply(twofit[[1]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
-        norm.c <- apply(twofit[[2]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.c) ])))
-
-        l.d <- twofit[[1]]$lambda
-        l.c <- twofit[[2]]$lambda
-
-        nnz.d <- twofit[[1]]$df-fixed.d
-        nnz.c <- twofit[[2]]$df-fixed.c
-
+        for(j in 1:2){
+        nobs.d <- twofit[[j]]$nobs
+        if(is.null(nobs.d)) next
+        
+          ndev.d <- (1-twofit[[j]]$dev.ratio)*twofit[[j]]$nulldev
+          fixed.d <-twofit[[j]]$df[1]
+          norm.d <- apply(twofit[[j]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
+  
+        l.d <- twofit[[j]]$lambda
+  
+        nnz.d <- twofit[[j]]$df-fixed.d
+  
         bic.d <- ndev.d+nnz.d*log(nobs.d) + 2*ebic.lambda*nnz.d*log(length(genes))
-        bic.c <- ndev.c+nnz.c*log(nobs.c) +2*ebic.lambda*nnz.c*log(length(genes))
+
+        this.seq <- as.integer(seq_along(l.d))
+
+        np[list(primerid=genes[g], component=comp[j], lseq=this.seq), c('lambda', 'nnz', 'ndev', 'bic'):= list(l.d, nnz.d, ndev.d, bic.d), by=NULL]
+
+
+        #np[primerid==genes[g]& component==component[j] & lseq==this.seq, c('lambda', 'nnz', 'ndev', 'bic'):= list(l.d, nnz.d, ndev.d, bic.d)]
 
         ## Now line things up by knots
-        out.nativepath[[g]] <- rbind(data.frame(lambda=l.d, nnz=nnz.d, ndev=ndev.d, primerid=genes[g], bic=bic.d,component='discrete'),
-                                     data.frame(lambda=l.c, nnz=nnz.c, ndev=ndev.c, primerid=genes[g], bic=bic.c,component='continuous'))
 
-        norm.d <- approx(l.d, norm.d, knots.d, rule=2)$y
-        norm.c <- approx(l.c, norm.c, knots.c, rule=2)$y
-        ndev.d <- approx(l.d, ndev.d, knots.d, rule=2)$y
-        ndev.c <- approx(l.c, ndev.c, knots.c, rule=2)$y        
-        nnz.d <- approx(l.d, nnz.d, knots.d, method='constant', rule=2)$y
-        nnz.c <- approx(l.c, nnz.c, knots.c, method='constant', rule=2)$y
-        l.d <- approx(l.d, l.d, knots.d, rule=2)$y
-        l.c <- approx(l.c, l.c, knots.c, rule=2)$y
-
-       
+        this.knots <- knots[[j]]
+        norm.d <- approx(l.d, norm.d, this.knots, rule=2)$y
+          ndev.d <- approx(l.d, ndev.d, this.knots, rule=2)$y
+          nnz.d <- approx(l.d, nnz.d, this.knots, method='constant', rule=2)$y
+          l.d <- approx(l.d, l.d, this.knots, rule=2)$y
         #data.frame(norm=knots, ndev1, ndev2, l1, l2)
-        out[[g]] <- data.frame(norm.d, norm.c, nnz.d, nnz.c, knots.d, knots.c, l.d, l.c, ndev.d, ndev.c, nobs.d, nobs.c, primerid=genes[g])
+
+         fout[J(comp[j], genes[g]), c('norm', 'nnz', 'l', 'ndev', 'nobs'):= list(norm.d, nnz.d, l.d, ndev.d, nobs.d), by=NULL]
     }
-    fortified <- merge(sigma, do.call(rbind, out))
-    native.path <- do.call(rbind, out.nativepath)
-    
+    }
+    #fortified <- merge(sigma, do.call(rbind, out))
+
+    fortified <- fout[!is.na(norm),]
+    native.path <- np[!is.na(bic),]
     list(fortified=fortified, norm.grid=NA, native.path=native.path)
         
         }
@@ -272,11 +290,13 @@ coefLayer <- function(lof, s, layer){
         }
 
     for(i in seq_along(genes)){
+        try({
         co <- coef(lof[[i,comp]], s=s[i])
         rn <- row.names(co)
         co <- setNames(as.numeric(co), rn)
         stopifnot(all(genes[-i] == names(co)[coefIdx]))
         out[,i][-i] <- co[coefIdx]
+            })
     }
     out
 }
@@ -393,20 +413,8 @@ layoutZifNetwork <- function(zifFit, Vattr=NULL, Eattr=NULL, collapse=TRUE, weig
 
 ##' @importFrom plyr ddply
 ##' @import reshape
-plotNetworksBIC <- function(FITS, ebic.lambda, layers=1:2, ...){
-
-fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, ebic.lambda=ebic.lambda)$native.path
-
-min.bic <- ddply(fort.out, ~primerid + component, function(df){
-    df[which.min(df$bic), ]
-    })
-
-min.bic.pid <- cast(min.bic, primerid  ~ component, value='lambda')
-min.bic.pid <- min.bic.pid[match(attr(FITS, 'genes'), min.bic.pid$primerid),]
-
-
-SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, l.c=min.bic.pid$continuous + .001, l.d=min.bic.pid$discrete + .001, union=TRUE, layers=layers, ...)
-
+plotNetworksBIC <- function(FITS, layers=1:2, ...){
+SingleCellAnalysis:::layoutZifNetwork(FITS, collapse=FALSE, union=TRUE, layers=layers, ...)
 }
 
 plotNetworks <- function(FITS, nedges, layers=1:2, printNNZperLambda=TRUE, ...){
@@ -416,25 +424,24 @@ fort.out <- SingleCellAnalysis:::fortify.zifnetwork(FITS, nknots=100)
     
 lambda.cv <- as.data.frame(attr(FITS, 'lambda'))
 lambda.cv$primerid <- row.names(lambda.cv)
-fort <- merge(fort.out$fortified, lambda.cv, by='primerid')
-
-nnz.per.lambda <- cast(melt(fort, measure.vars=c('nnz.d','nnz.c')), knots.d + knots.c  ~ variable, fun.aggregate=sum)
-nnz.per.lambda <- nnz.per.lambda[order(-nnz.per.lambda$knots.d),]
+#fort <- merge(fort.out$fortified, lambda.cv, by='primerid', all.y=TRUE)
+fort <- fort.out$fortified
+nnz.per.lambda <- fort[,list(nnz=sum(nnz)), by=list(component, knots)]
 
 if(printNNZperLambda){
-    print(ggplot(nnz.per.lambda)+geom_line(aes(y=knots.d, x=nnz.d), col='blue')+geom_line(aes(y=knots.c, x=nnz.c), col='red') + xlab('Edges') + ylab('Lambda'))
+    print(ggplot(nnz.per.lambda, aes(y=knots, x=nnz, col=component))+geom_line() + xlab('Edges') + ylab('Lambda') + xlim(0, 500))
 }
 
 
 nnz.per.lambda.fun <- list(
-    dichot=with(nnz.per.lambda, approxfun(nnz.d, knots.d)),
-    cont=with(nnz.per.lambda, approxfun(nnz.c, knots.c)))
+    dichot=with(nnz.per.lambda[component=='disc'], approxfun(nnz, knots)),
+    cont=with(nnz.per.lambda[component=='cont'], approxfun(nnz, knots)))
+
 
     grList <- list()
 for(i in seq_along(nedges)){
     ## Spread edges evenly over the selected layers
     edges <- nedges[i]/length(layers)
-    
     l.c <- nnz.per.lambda.fun$cont(edges)
     l.d <- nnz.per.lambda.fun$dichot(edges)
     
