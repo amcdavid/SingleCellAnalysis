@@ -219,3 +219,21 @@ annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, where='lower
     ggpairsObj
 }
 
+
+annotateUniplot <- function(plot, lc, genesToShow=5, expand.x=1, expand.y=1, ...){
+    panel <- ggplot_build(plot)$panel
+    rangeMin <- min(abs(panel$ranges[[1]]$x.range))
+    ytop <- max(panel$ranges[[1]]$y.range)
+    gc <- getCoord(lc, 1, 2, genesToShow)
+    gcMax <- max(abs(gc))
+    scale <- rangeMin/gcMax
+
+    gc <- gc*scale*expand.x
+    gc$id <- row.names(gc)
+    gcNames <- names(gc)
+    gcTrans <- c(gcNames[2], gcNames[1])
+    gc$y <- seq(ytop*.9, to=ytop*.7/expand.y, length.out=nrow(gc))
+   
+    segs <- list(geom_segment(data=gc, aes_string(x=0, y='y', xend=gcNames[1], yend='y', col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y='y', col=NULL, shape=NULL, label="id"), col='black', size=2.5, ..., vjust=.15))
+    plot + segs
+}

@@ -80,20 +80,27 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
         
 }
   df <- as.data.frame(cbind(ee.dichot, ee.real))
-  names(df) <- make.names(c(paste(colnames(ee), 'd', sep='.'), paste(colnames(ee), 'c', sep='.')))
+
+  namesMaybe <- make.names(c(paste(colnames(ee), 'd', sep='.'), paste(colnames(ee), 'c', sep='.')))
+
   
   ## select indices of desired predictors
   idx <- list(1:ngenes, (ngenes+1):(2*ngenes) )[match(predictor, c('dichotomous', 'continuous'))]
   idx <- do.call(c, idx)
   df <- df[,idx]
+  ## Only rewrite names if they are ambiguous
+  if(all( c('dichotomous', 'continuous') %in% predictor)){
+        names(df) <- namesMaybe[idx]
+  }
+
  if('interaction' %in% predictor){
   form <- sprintf('~ (%s)^2', paste(names(df), collapse="+"))
 } else{
  form <- sprintf('~ %s', paste(names(df), collapse="+"))
 } 
   resp <- as.factor(cData(sca)[,comparison])
-  fam <- 'binomial'
-  if(length(levels(resp))>2)
+  ## fam <- 'binomial'
+  ## if(length(levels(resp))>2)
     fam <- 'multinomial'
 
 
@@ -161,7 +168,11 @@ glmMisclass <- function(glmsca, alt.fit, groups, s='lambda.min'){
 
 .sparseGlmToMat <- function(glmsca, s='lambda.1se', additive=TRUE){
     scores <- coef(glmsca$cv.fit, s=s)
-    Scores <- do.call(cBind, scores)[-1,] #No intercept
+    if(is.list(scores)){
+        Scores <- do.call(cBind, scores)[-1,] #No intercept
+    } else{
+        Scores <- as.matrix(scores[-1,])
+    }
     if(!additive && all(glmsca$additive.dim>0)){
         Scores <- Scores[-glmsca$additive.dim,]
 }
