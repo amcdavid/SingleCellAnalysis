@@ -102,21 +102,20 @@ prepClassifier <- function(lc){
     scoreNorm$primerid <- as.character(    scoreNorm$primerid)
 
     ## Get 2-norm for each predictor along each pair of dimensions
-    biNorm <- array(NA, dim=c(ncol(scores), ncol(scores), nrow(scores)), dimnames=list(colnames(scores), colnames(scores), features))
+    biDist <- biNorm <- array(NA, dim=c(ncol(scores), ncol(scores), nrow(scores)), dimnames=list(colnames(scores), colnames(scores), features))
     ## features ordered by 2-norm for this pair of dimensions
-    biGenes <- array('', dim=dim(biNorm))
-    dimnames(biGenes)[1:2] <- dimnames(biNorm)[1:2]
+    biDistGenes <- biGenes <- array('', dim=dim(biNorm))
+    dimnames(biDistGenes)[1:2] <- dimnames(biGenes)[1:2] <- dimnames(biNorm)[1:2]
     for(d1 in seq_len(ncol(scores)-1)){
         for(d2 in seq(d1+1, ncol(scores))){
             biNorm[d1, d2,] <- biNorm[d2,d1,] <- sqrt(scores[,d1]^2+scores[,d2]^2)
+            biDist[d1, d2,] <- biDist[d2,d1,] <- (scores[,d1]-scores[,d2])^2
             biGenes[d1, d2,] <- features[order(-biNorm[d1,d2,])]
+            biDistGenes[d1,d2,] <- features[order(-biDist[d1,d2,])]
         }
     }
 
-    attr(lc, 'biNorm') <- biNorm
-    attr(lc, 'biGenes') <- biGenes
-    attr(lc, 'norm') <- scoreNorm
-    lc
+    structure(lc, biNorm=biNorm, biGenes=biGenes, norm=scoreNorm, biDist=biDist, biDistGenes=biDistGenes)
 }
 
 ##' Combine predictions from a LinearClassifier with cData from the object used to generate it
@@ -131,10 +130,12 @@ as.data.frame.LinearClassifier <- function(lc, row.names, optional, ...){
     cbind(as.data.frame.matrix(lc), attr(lc, 'cData'))
 }
 
-getCoord <- function(lc, d1, d2, genesToShow){
-    bn <- attr(lc, 'biNorm')
-    bg <- attr(lc, 'biGenes')
-    thisGenes <- bg[d1,d2,1:genesToShow]
+getCoord <- function(lc, d1, d2, genesToShow, metric='norm'){
+    metric <-  match.arg(metric, c('norm', 'distance'))
+    bn <- if(metric=='norm') attr(lc, 'biNorm') else attr(lc, 'biDist')
+    bg <- if(metric=='norm') attr(lc, 'biGenes') else attr(lc, 'biDistGenes')
+    genesSelected <- dim(bg)[3]
+    thisGenes <- bg[d1,d2,1:min(genesToShow,genesSelected)]
     as.data.frame(attr(lc, 'scores')[thisGenes,c(d1, d2)])
 }
 
@@ -170,23 +171,27 @@ addEllipse <- function(ggpairsObj, panels, ellipseArgList=list(lwd=1, alpha=1), 
 ##' Draws vectors representing the "angle" and "length" the top 'genesToShow' predictors have when trying to discminant objects.
 ##' Vectors are drawn on the lower triangle of a ggpairs object (probably plotted by calling ggpairs(as.data.frame(lc), ...)) by matching names in the ggpairs object to the names of the classifier functions in lc.
 ##' So this function probably won't work unless ggpairs was called on 'lc'.
+##' The 'top' genes can be selected either by the 2-norm (x^2+y^2)^(1/2), or the their 2-distance (x-y)^2 in each panel.
 ##' There is an arbitrary scaling between the scatter plot and the length of these vectors.  By default the longest vector is scaled to have length of the narrowest plot limit, but this can be adjusted via 'expand'.
 ##' @param ggpairsObj output from a call to 'ggpairs'
 ##' @param lc object of class 'LinearClassifier'
+##' @param metric character, one of 'distance' or 'norm'.  See details.
 ##' @param genesToShow number of bi-plot vectors to show?
 ##' @param expand scaling factor of bi-plot vectors
 ##' @param where character vector, one or more of "upper" or "lower"
+##' @param debug 
 ##' @param ... additional arguments passed to ggplot
 ##' @return modified ggpairs object, which can be plotted by evaluating it.
 ##' @importFrom GGally getPlot putPlot
 ##' @importFrom grid unit arrow
 ##' @export
 ##' @seealso \link{doLDA}, \link{doGLMnet}
-annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, where='lower', ...){
+annotateBiPlot <- function(ggpairsObj, lc, metric='norm', genesToShow=5, expand=1, where='lower', debug=FALSE, ...){
     ## Precondition: lower triangle contains scatter plots
     ## and possibly some condition on the order of the scatter plots and lc
     dims <- match(colnames(lc), names(ggpairsObj$data)[ggpairsObj$columns])
     where <- match.arg(where, c('upper', 'lower'), several.ok=TRUE)
+    metric <- match.arg(metric, c('norm', 'distance'))
     for(d1Idx in seq_along(dims)[-length(dims)]){ #gives index in terms of lc
         d1 <- dims[d1Idx]               #gives index in terms of ggpairs
         for(d2Idx in seq(d1Idx+1, length(dims))){
@@ -208,11 +213,20 @@ annotateBiPlot <- function(ggpairsObj, lc, genesToShow=5, expand=1, where='lower
             if('lower' %in% where){
                  segs <- list(geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[1], yend=gcNames[2], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y=gcNames[2], col=NULL, shape=NULL, label="id"), col='black', size=2.5, ...))
                 ggpairsObj <- putPlot(ggpairsObj, gp + segs, d2, d1)
+                 if(debug){
+                     cat('row=',d2, 'col=', d1)
+                     print(gp + segs)
+                 }
             }
             if('upper' %in% where){
-                 segs <- list(geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[2], yend=gcNames[1], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[2], y=gcNames[1], col=NULL, shape=NULL, label="id"), col='black', size=2.5, ...))
+                 segs <- list(geom_segment(data=gc, aes_string(x=0, y=0, xend=gcNames[2], yend=gcNames[1], col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red"), geom_text(data=gc, aes_string(x=gcNames[2], y=gcNames[1], col=NULL, shape=NULL, label="id"), col='black', size=2.5))
                 gp <- getPlot(ggpairsObj, d1, d2)
                 ggpairsObj <- putPlot(ggpairsObj, gp + segs, d1, d2)
+                 if(debug){
+                     cat('row=',d1, 'col=', d2)
+                     print(gp + segs)
+                 }
+
             }
         }
     }
@@ -234,6 +248,6 @@ annotateUniplot <- function(plot, lc, genesToShow=5, expand.x=1, expand.y=1, ...
     gcTrans <- c(gcNames[2], gcNames[1])
     gc$y <- seq(ytop*.9, to=ytop*.7/expand.y, length.out=nrow(gc))
    
-    segs <- list(geom_segment(data=gc, aes_string(x=0, y='y', xend=gcNames[1], yend='y', col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y='y', col=NULL, shape=NULL, label="id"), col='black', size=2.5, ..., vjust=.15))
+    segs <- list(geom_segment(data=gc, aes_string(x=0, y='y', xend=gcNames[1], yend='y', col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y='y', col=NULL, shape=NULL, label="id"), col='black', size=2.5, ..., vjust=0))
     plot + segs
 }
