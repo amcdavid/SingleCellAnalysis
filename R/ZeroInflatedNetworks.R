@@ -68,7 +68,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression2'){
             pf <- c(pf, rep(1, ngenes))
-            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real-mean(y.real), family=family, standardize=!precenter, penalty.factor=pf, ...)
+            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real, family=family, standardize=!precenter, penalty.factor=pf, ...)
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression'){
             fit <- glmnet(this.model[y.dichot,], y.real-mean(y.real), family=family, penalty.factor=pf, standardize=!precenter, ...)
@@ -108,9 +108,14 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             ## aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density()
             ## bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
             ## browser(expr=this.gene=='CXCL1')
-            fit <- glmnet(this.model.zero, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
 
-            
+            if(response == 'cg.regression'){
+                thisx <- this.model.zero
+            }else{
+                thisx <- cbind(this.model.zero, this.model[, -seq_len(additive.dim)])
+                pf <- c(pf, rep(1, ngenes))
+            }
+            fit <- glmnet(this.x, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
         }
         l.idx <- modelSelector(fit, ngenes=ngenes)
         sigma2 <- (1-fit$dev.ratio)*fit$nulldev/nobs
@@ -273,7 +278,7 @@ coefLayer <- function(lof, s, layer){
     stopifnot(length(layer)==1)
     out <- matrix(0, nrow=ngenes, ncol=ngenes, dimnames=list(genes, genes))
     if(is.integer(layer)){
-        layer <- c('cont', 'disc', 'cont2')[layer]
+        layer <- c('cont', 'disc', 'cont2', 'disc2')[layer]
         warning('Assuming layer is ', paste(layer, collapse=','))
     }
 
@@ -287,6 +292,10 @@ coefLayer <- function(lof, s, layer){
             coefIdx <- coefIdx + ngenesNotSelf
         } else if(layer=='disc'){
             comp <- 'dichotomous'
+        } else if(layer=='disc2'){
+            comp <- 'dichotomous'
+            stopifnot(attr(lof, 'response')=='cg.regression2')
+            coefIdx <- coefIdx+ngenesNotSelf
         }
 
     for(i in seq_along(genes)){
