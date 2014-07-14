@@ -8,7 +8,7 @@
 \usage{
 glmSingleCellAssay(sca, comparison, min.freq, predictor = c("continuous",
   "dichotomous"), pen.scale.interaction = 2, precenter = FALSE,
-  prescale = FALSE, addn, addn.penalty, user.mm, alpha = 0.9,
+  prescale = FALSE, addn = NULL, addn.penalty = 0, user.mm, alpha = 0.9,
   only.mm = FALSE, ...)
 }
 \arguments{
@@ -35,9 +35,9 @@ glmSingleCellAssay(sca, comparison, min.freq, predictor = c("continuous",
 
 \item{prescale}{should the gene predictors be scaled to have unit variance?}
 
-\item{addn}{a data frame of nrow(sca) giving additional predictors to be added to the design}
+\item{addn}{character vector, giving additional columns of design, interpreted in the context of cData(sca)}
 
-\item{addn.penalty}{an optional vector of length ncol(addn) giving the relative scale of the penalty for add}
+\item{addn.penalty}{an optional numeric giving the relative scale of the penalty for add}
 
 \item{user.mm}{a function to be applied to exprs(sca) instead of the defaults given by \code{predictor}}
 

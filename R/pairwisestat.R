@@ -35,10 +35,6 @@ chisq.pairwise <- function (sc) {
   chi2
 }
 
-setClass('PairwisePearson', contains='matrix', representation=representation(nsamp='numeric', npos='numeric'), validity=function(object){
-    ncol(object@.Data)==nrow(object@.Data) && ncol(object@.Data) == length(object@npos)
-})
-
 ##' Calculate pairwise correlation coefficient
 ##'
 ##' Calculates the correlation coefficient between each pair of genes on the
@@ -92,9 +88,6 @@ ci.pearson.pairwise <- function(pairwisePearson, ci=.95, method='asymptotic'){
     abind(lower=ci.lower, est=pairwisePearson@.Data, upper=ci.upper, along=0)
 }
 
-setClass('PairwiseOddsratio', contains='matrix', representation=representation(genes='character'))
-
-setClass('PairwiseOddsWithHook', contains='PairwiseOddsratio', representation=representation(hook='matrix'))
 
 ##' Calculate pairwise gene odds ratios
 ##'
@@ -188,7 +181,6 @@ safeSubset <- function(list, index){
     !is.null(list[[index]]) && list[[index]]
 }
 
-setGeneric('coef')
 setMethod(coef, 'PairwiseOddsratio', function(object, onlyConverged=FALSE, se=FALSE){
     tmp <- lapply(object, function(x) x[['coef']])
     tmp.names <- expand.grid(primer1=object@genes, primer2=object@genes, stringsAsFactors=FALSE)

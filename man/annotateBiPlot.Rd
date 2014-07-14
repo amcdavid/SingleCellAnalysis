@@ -3,19 +3,23 @@
 \alias{annotateBiPlot}
 \title{Add bi-plot vectors onto a ggpairs scatter plot of classifiers}
 \usage{
-annotateBiPlot(ggpairsObj, lc, genesToShow = 5, expand = 1,
-  where = "lower", ...)
+annotateBiPlot(ggpairsObj, lc, metric = "norm", genesToShow = 5,
+  expand = 1, where = "lower", debug = FALSE, ...)
 }
 \arguments{
 \item{ggpairsObj}{output from a call to 'ggpairs'}
 
 \item{lc}{object of class 'LinearClassifier'}
 
+\item{metric}{character, one of 'distance' or 'norm'.  See details.}
+
 \item{genesToShow}{number of bi-plot vectors to show?}
 
 \item{expand}{scaling factor of bi-plot vectors}
 
 \item{where}{character vector, one or more of "upper" or "lower"}
+
+\item{debug}{}
 
 \item{...}{additional arguments passed to ggplot}
 }
@@ -26,6 +30,7 @@ modified ggpairs object, which can be plotted by evaluating it.
 Draws vectors representing the "angle" and "length" the top 'genesToShow' predictors have when trying to discminant objects.
 Vectors are drawn on the lower triangle of a ggpairs object (probably plotted by calling ggpairs(as.data.frame(lc), ...)) by matching names in the ggpairs object to the names of the classifier functions in lc.
 So this function probably won't work unless ggpairs was called on 'lc'.
+The 'top' genes can be selected either by the 2-norm (x^2+y^2)^(1/2), or the their 2-distance (x-y)^2 in each panel.
 There is an arbitrary scaling between the scatter plot and the length of these vectors.  By default the longest vector is scaled to have length of the narrowest plot limit, but this can be adjusted via 'expand'.
 }
 \seealso{

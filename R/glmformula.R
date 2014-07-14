@@ -1,5 +1,3 @@
-## setGeneric('cv.glmnet',  function(x, y, ...) standardGeneric('cv.glmnet'))
-
 ## contr.dummy <- function(n, base=1, contrasts=FALSE, sparse=FALSE){
 ##   contr.treatment(n, base, contrasts, sparse)
 ## }
@@ -16,7 +14,6 @@
 ## ##' @param y data.frame or environment in which \code{x} is evaluated
 ## ##' @param ... arguments passed to cv.glmnet
 ## ##' @return see cv.glmnet
-## ## @export
 ## setMethod('cv.glmnet', signature='formula', function(x, y, ...){
 ##   family <- list(...)$family
 ##   subset <- list(...)$subset
