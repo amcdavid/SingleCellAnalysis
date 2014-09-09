@@ -25,6 +25,7 @@ Imports:
     MASS,
     brglm,
     ggplot2,
-    Matrix
+    Matrix,
+    scales
 Suggests:
     testthat

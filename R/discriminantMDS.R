@@ -201,7 +201,7 @@ annotateBiPlot <- function(ggpairsObj, lc, metric='norm', genesToShow=5, expand=
             rx <- min(abs(panel$ranges[[1]]$x.range))
             ry <- min(abs(panel$ranges[[1]]$y.range))
             rangeMin <- min(rx, ry)
-            gc <- getCoord(lc, d1Idx, d2Idx, genesToShow)
+            gc <- getCoord(lc, d1Idx, d2Idx, genesToShow, metric)
             gcMax <- max(abs(gc))
             scale <- rangeMin/gcMax
 
@@ -233,8 +233,10 @@ annotateBiPlot <- function(ggpairsObj, lc, metric='norm', genesToShow=5, expand=
     ggpairsObj
 }
 
+##' @importFrom scales hue_pal
+twoPal <- hue_pal()(2)
 
-annotateUniplot <- function(plot, lc, genesToShow=5, expand.x=1, expand.y=1, ...){
+annotateUniplot <- function(plot, lc, genesToShow=5, expand.x=1, expand.y=1, negColor=twoPal[2], posColor=twoPal[1], ...){
     panel <- ggplot_build(plot)$panel
     rangeMin <- min(abs(panel$ranges[[1]]$x.range))
     ytop <- max(panel$ranges[[1]]$y.range)
@@ -245,9 +247,9 @@ annotateUniplot <- function(plot, lc, genesToShow=5, expand.x=1, expand.y=1, ...
     gc <- gc*scale*expand.x
     gc$id <- row.names(gc)
     gcNames <- names(gc)
-    gcTrans <- c(gcNames[2], gcNames[1])
     gc$y <- seq(ytop*.9, to=ytop*.7/expand.y, length.out=nrow(gc))
+    gc$col <- ifelse(gc[,1]>0, posColor, negColor)
    
-    segs <- list(geom_segment(data=gc, aes_string(x=0, y='y', xend=gcNames[1], yend='y', col=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color="red", ...), geom_text(data=gc, aes_string(x=gcNames[1], y='y', col=NULL, shape=NULL, label="id"), col='black', size=2.5, ..., vjust=0))
+    segs <- list(geom_segment(data=gc, aes_string(x=0, y='y', xend=gcNames[1], yend='y', color=NULL, shape=NULL), arrow=grid::arrow(length=unit(0.2,"cm")), color=gc$col,...), geom_text(data=gc, aes_string(x=gcNames[1], y='y', col=NULL, shape=NULL, label="id"), col='black', size=2.5, ..., vjust=0))
     plot + segs
 }
