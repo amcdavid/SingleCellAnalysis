@@ -1,3 +1,8 @@
+without <- function(obj, idx){
+    if(length(idx)==0) return(obj )
+    if(!is.null(dim(obj)) && length(dim(obj))>1) return(obj[,-idx,drop=FALSE]) else return(obj[-idx])
+}
+
 ##' Fit Meinhousen-Buhlmann to a SingleCellAssay object 
 ##'
 ##' Regresses the dichotomous and continuous components of each gene in \code{sc}
@@ -12,16 +17,16 @@
 ##' @param precenter How should centering/scaling be done with respect to continuous regressions.  TRUE if centering should be done with respect to all cells; FALSE if centering should be done only with respect to expressed cells
 ##' When precenter=TRUE, cv.glmnet will not standardize.
 ##' @param precenter.fun a function called to center the expression matrix prior to calling glmnet
-##' @param response a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression'
+##' @param response a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression', 'cg.regression2', 'cg.mle'
 ##' @param modelSelector a function called gene and component-wise on each fit, that should return an index to the glmnet lambda sequence for that gene and component
 ##' @param onlyReturnFitter if TRUE, return an undocumented fitter function that is internally called on each gene/component.
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
-fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, ...){
+fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, debug=FALSE, ...){
     ## gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
-    response <- match.arg(response, c('hurdle', 'zero.inflated', 'cg.regression',  'cg.regression2'))
+    response <- match.arg(response, c('hurdle', 'zero.inflated', 'cg.regression',  'cg.regression2', 'cg.mle'))
     sub <- sc[, freq(sc)>min.freq]
     genes <- fData(sub)$primerid
     ngenes <- length(genes)
@@ -68,7 +73,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression2'){
             pf <- c(pf, rep(1, ngenes))
-            fit <- glmnet(cbind(this.model[y.dichot,], this.model.zero[y.dichot,-seq_len(additive.dim)]), y.real, family=family, standardize=!precenter, penalty.factor=pf, ...)
+            fit <- glmnet(cbind(this.model, without(this.model.zero, seq_len(additive.dim)))[y.dichot,], y.real, family=family, standardize=!precenter, penalty.factor=pf, ...)
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression'){
             fit <- glmnet(this.model[y.dichot,], y.real-mean(y.real), family=family, penalty.factor=pf, standardize=!precenter, ...)
@@ -91,36 +96,64 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
 
             ## calculate offset given lambda
             coef.c <- as.numeric(coef(fit.c, s=l.cont))
-            newx <- if(response =='cg.regression') this.model else cbind(this.model, this.model.zero[,-seq_len(additive.dim)])
+            newx <- if(response =='cg.regression') this.model else cbind(this.model, without(this.model.zero, seq_len(additive.dim)))
+            ## H[b|a]/Kbb
             cont.fitted <- predict(fit.c, s=l.cont, newx=newx)
             #Hb <- coef.c[1]*Kbb    #Intercept times precision
             #Kba <- as.matrix(-coef.c[-1]*Kbb) #others times -precision
 
+            ## H[b|a]^2*/Kbb^2
             off <- Kbb*cont.fitted^2/2
             #fitted2 <- this.model %*% Kba
             #off2 <- (fitted2^2/2 -fitted2)/(Kbb*Hb)
             offt <- off-mean(off)
-            offt[offt < 2*-1] <- -2
-            offt[offt > 2] <- 2
+            TOP <- 2
+            offt[offt < -TOP] <- -TOP
+            offt[offt > TOP] <- TOP
             offt <- offt-mean(offt)
             message(summary(offt))
-           ## df <- data.frame(fit=drop(cont.fitted), pos=factor(y.dichot), off=drop(off))
-            ## aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density()
-            ## bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
+            df <- data.frame(fit=drop(cont.fitted), pos=factor(y.dichot), off=drop(offt))
+            aplot <- ggplot(df, aes(x=fit, col=pos))+geom_density(adjust=3)
+            bplot <- ggplot(df,aes(x=off, y=fit, col=pos)) + geom_point()
             ## browser(expr=this.gene=='CXCL1')
 
             if(response == 'cg.regression'){
                 thisx <- this.model.zero
             }else{
-                thisx <- cbind(this.model.zero, this.model[, -seq_len(additive.dim)])
+                thisx <- cbind(this.model.zero, without(this.model, seq_len(additive.dim)))
                 pf <- c(pf, rep(1, ngenes))
             }
-            fit <- glmnet(this.x, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
+            fit <- glmnet(thisx, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
         }
         l.idx <- modelSelector(fit, ngenes=ngenes)
         sigma2 <- (1-fit$dev.ratio)*fit$nulldev/nobs
+        ## Need to wrap fit into object/method
         structure(fit, nobs=nobs, sigma2=sigma2[l.idx], selectedLambda=fit$lambda[l.idx], off=off)
     }
+
+    if(response=='cg.mle'){
+        stopifnot(additive.dim==0)
+        th0 <- rep(0, ngenes*4-1)
+        names(th0) <- parmap(ngenes)
+        th0['hbb'] <- th0['kbb'] <- 1
+        lb <- rep(-Inf, length(th0))
+        lb[names(th0)=='kbb'] <- .001
+
+        glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
+            if(j=='dichotomous'){
+                fit <- fits[[this.gene, 'continuous']]
+                return(fit)
+            }
+
+            ll <- generatelogLik(y.zif, this.model, returnGrad=FALSE, debug=debug, ...)
+            gr <- generatelogLik(y.zif, this.model, returnGrad=TRUE, debug=debug, ...)
+            oo <- optim(th0, ll, gr, method='BFGS',control=list(fnscale=-1, maxit=4000))
+            fit <- list(coefficients=oo$par[-which(names(oo$par)=='kbb')], jerr=0, lambda=0)
+            structure(fit, nobs=length(y.zif), sigma2=1/oo$par['kbb'], selectedLambda=0)
+        }
+
+    }
+
 
     if(onlyReturnFitter) return(glmnetFit)
     
@@ -136,13 +169,13 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             this.model <- model.mat[,-this.gene.idx-additive.dim]
             this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim]
             if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
-            tt <- try({
-                this.fit <- glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)               
-            })
+            this.fit <- tryCatch({
+                glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)
+            }, error=function(e) SingleCellAssay:::reraise(e, convertToWarning=!debug))
             ## recover from glmnet errors or non-convergence
-            if(class(tt) == 'try-error' || this.fit$jerr==-1 ||  any(!is.finite(this.fit$lambda)) || min(this.fit$lambda) > 1e2){
+            if(inherits(this.fit, 'error') || this.fit$jerr==-1 ||  any(!is.finite(this.fit$lambda)) || min(this.fit$lambda) > 1e2){
                 warning(sprintf('There was an error with gene %s', this.gene))
-            } else{
+            }else{
                 fits[[i,j]] <- this.fit
                 lambda[i,j] <- attr(this.fit, 'selectedLambda')
                 lambda0[i,j] <- this.fit$lambda[1]
@@ -151,7 +184,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             }
         }                               #end gene loop
     }                                   #end component loop
-
+    
     structure(fits, genes=genes, gene.predictors=gene.predictors, response=response,additive.dim=additive.dim, lambda=lambda, lambda0=lambda0, nobs=nobs, sigma2=sigma2, response=response, class=c('FittedZifNetwork', 'class'))
 }
 
@@ -234,7 +267,7 @@ fortify.zifnetwork <- function(fits, lc.range, ld.range, nknots=20, ebic.lambda=
         
           ndev.d <- (1-twofit[[j]]$dev.ratio)*twofit[[j]]$nulldev
           fixed.d <-twofit[[j]]$df[1]
-          norm.d <- apply(twofit[[j]]$beta, 2, function(x) sum(abs(x[-seq_len(fixed.d) ])))
+          norm.d <- apply(twofit[[j]]$beta, 2, function(x) sum(abs(without(x, seq_len(fixed.d)))))
   
         l.d <- twofit[[j]]$lambda
   

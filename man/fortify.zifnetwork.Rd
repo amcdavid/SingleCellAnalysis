@@ -3,7 +3,8 @@
 \alias{fortify.zifnetwork}
 \title{Derive global properties of network fit}
 \usage{
-fortify.zifnetwork(fits, lc.range, ld.range, nknots = 20, ebic.lambda = 0)
+\method{fortify}{zifnetwork}(fits, lc.range, ld.range, nknots = 20,
+  ebic.lambda = 0)
 }
 \arguments{
 \item{fits}{\code{fitZifNetwork} object}

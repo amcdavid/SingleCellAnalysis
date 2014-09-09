@@ -3,7 +3,7 @@ data(vbetaFA)
 vbetaFA <- subset(vbetaFA, ncells==1)
 ngeneson <- data.frame(ngeneson=apply(exprs(vbetaFA)>0, 1, mean))
 ntest <- 4
-vbetaFA <- vbetaFA[,freq(vbetaFA)>.05]
+vbetaFA <- vbetaFA[,freq(vbetaFA)>.1]
 vbetaFA <- combine(vbetaFA, ngeneson)
 vbetaT <- vbetaFA[,seq_len(ntest)]
 
@@ -41,7 +41,7 @@ expect_true(all(getNullDF(out)==2))
 
 out <- fitZifNetwork(vbetaT, c('factor(Stim.Condition)', 'ngeneson'), precenter.fun=function(x) scale(x, scale=FALSE), response='cg.regression2', modelSelector=nullSelector)
 expect_equal(attr(out, 'additive.dim'),2)
-expect_true(all(getNullDF(out)==2))
+#expect_true(all(getNullDF(out)==2))
 
 
 })
@@ -95,6 +95,14 @@ test_that('Can fit', {
     
 })
 
+
+context('Testing error handling')
+test_that('Not too zealous in squelching errors', {
+    expect_error(cg <- fitZifNetwork(vbetaFA, 'ngeneson', precenter.fun=function(x) x <- matrix('abcd', nrow=nrow(vbetaFA), ncol=ncol(vbetaFA)), min.freq=0, response='hurdle', modelSelector=bicSelector, lambda.min.ratio=0, debug=TRUE), regexp='NA/NaN/Inf')
+    expect_warning(cg <- fitZifNetwork(vbetaFA, 'ngeneson', precenter.fun=function(x) x <- matrix('abcd', nrow=nrow(vbetaFA), ncol=ncol(vbetaFA)), min.freq=0, response='hurdle', modelSelector=bicSelector, lambda.min.ratio=0, debug=FALSE))
+    
+})
+
 context('Testing network fortification')
 cg <- fitZifNetwork(vbetaFA, 'ngeneson', precenter.fun=function(x) scale(x, scale=FALSE), response='cg.regression', modelSelector=bicSelector, lambda.min.ratio=.05)
 hurdle <-fitZifNetwork(vbetaFA, 'ngeneson', precenter.fun=function(x) scale(x, scale=FALSE), response='hurdle', modelSelector=bicSelector, lambda.min.ratio=.05)
@@ -145,3 +153,19 @@ test_that('Can get array', {
 
 
 
+library(numDeriv)
+context('MV hurdle MLE')
+test_that('Finite difference gradients approximate analytic', {
+    ee <- exprs(vbetaT)    
+    gl <- generatelogLik(ee[,1], ee[,-1, drop=FALSE])
+    dr <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], returnGrad=TRUE)
+    par <- get('par', environment(gl))
+    th <- setNames(rep(2, length(par)), par)
+    expect_equivalent(grad(gl, th), dr(th))
+
+    gl <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], lambda=1)
+    dr <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], returnGrad=TRUE, lambda=1)
+    par <- get('par', environment(gl))
+    th <- setNames(rep(2, length(par)), par)
+    expect_equivalent(grad(gl, th), dr(th))
+})

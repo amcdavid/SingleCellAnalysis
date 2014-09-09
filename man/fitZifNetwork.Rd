@@ -6,7 +6,7 @@
 fitZifNetwork(sc, additive.effects, min.freq = 0.05,
   gene.predictors = "zero.inflated", precenter = TRUE,
   precenter.fun = scale, response = "hurdle", modelSelector,
-  onlyReturnFitter = FALSE, ...)
+  onlyReturnFitter = FALSE, debug = FALSE, ...)
 }
 \arguments{
 \item{sc}{SingleCellAssay object on a thresholded layer}
@@ -22,7 +22,7 @@ When precenter=TRUE, cv.glmnet will not standardize.}
 
 \item{precenter.fun}{a function called to center the expression matrix prior to calling glmnet}
 
-\item{response}{a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression'}
+\item{response}{a character vector, one of 'zero.inflated', 'hurdle', or 'cg.regression', 'cg.regression2', 'cg.mle'}
 
 \item{modelSelector}{a function called gene and component-wise on each fit, that should return an index to the glmnet lambda sequence for that gene and component}
 
