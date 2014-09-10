@@ -161,11 +161,11 @@ test_that('Finite difference gradients approximate analytic', {
     dr <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], returnGrad=TRUE)
     par <- get('par', environment(gl))
     th <- setNames(rep(2, length(par)), par)
-    expect_equivalent(grad(gl, th), dr(th))
+    expect_equal(grad(gl, th), dr(th), tolerance=1e-4)
 
     gl <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], lambda=1)
     dr <- generatelogLik(ee[,1], ee[,-1, drop=FALSE], returnGrad=TRUE, lambda=1)
     par <- get('par', environment(gl))
     th <- setNames(rep(2, length(par)), par)
-    expect_equivalent(grad(gl, th), dr(th))
+    expect_equal(grad(gl, th), dr(th),tolerance=1e-4)
 })
