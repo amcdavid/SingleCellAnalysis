@@ -3,7 +3,7 @@ Type: Package
 Title: Tools for Analysis of Zero-Inflated, Continuous Data
 Description: Utility functions for plotting and summarizing Single Cell
     Expression Data
-Version: 0.31
+Version: 0.32
 Author: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Maintainer: Andrew McDavid <andrew.n.mcdavid@gmail.com>
 Depends:
@@ -26,6 +26,8 @@ Imports:
     brglm,
     ggplot2,
     Matrix,
-    scales
+    scales,
+    nloptr,
+    numDeriv
 Suggests:
     testthat
