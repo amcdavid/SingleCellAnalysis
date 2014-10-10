@@ -8,6 +8,7 @@ coordmap <- function(p){
     c(1,   2:p, 1,   2:p, 2:p,  2:p, 1)
 }
 
+## the negative of the log-likelihood!
 generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames=NULL){
     TOL <- .001
     LARGE <- 500
@@ -95,7 +96,8 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
         cat(theta, ': ')
         cat(sloglik, '\n')
     }
-        return(sum(loglik)+sum(lgroup))
+        negpenll <- -loglik-sum(lgroup)
+        ifelse(is.finite(negpenll), negpenll, Inf)
     }
 
     grad <- function(theta){
@@ -125,8 +127,8 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
         gradPen <- rep(0, length(par))
         if(lambda>0){
             for(i in seq_along(par)){
-                if(cmap[p]==1) next
-                theta[p]/lgroup[cmap[p]]
+                if(cmap[i]==1) next
+                theta[i]/lgroup[cmap[i]]
             }
     }
 
@@ -135,10 +137,45 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
         if(debug){
             cat('grad:', sgrad, '\n')
         }
-        sgrad
+        -sgrad
     }
 
     
     
     if(returnGrad) grad else ll
+}
+
+LAYERMAP <- c('gbb'='G', 'gba'='G',
+              'hbb'='Hdisc', 'hab'='Hdisc', 'hba'='Hcont',
+              'kba'='K', 'kbb'='K')
+OLAYER <- c(G=1, Hdisc=2, Hcont=3, K=4)
+
+getJoint210 <- function(zmFits){
+    genes <- attr(zmFits, 'genes')
+    ng <- length(genes)
+    ## Off-diagonal entries are all estimated twice:
+    ## Once for A|B and once for B|A
+    ## H matrix has more complicated relationship:
+    ## Upper tri of A|B is lower tri of B|A
+    ## So we'll keep the redundant estimates in two separate slices
+    ## (Hdisc=upper tri of B|A, Hcont=lower tri of B|A)
+    ## Then average them
+    theta <- array(NA, dim=c(ng, ng, 4), #G, Hdisc, Hcont, K
+                   dimnames=list(genes, genes, c('G', 'Hdisc', 'Hcont', 'K')))
+    layer <-  OLAYER[LAYERMAP[parmap(ng)]]
+    for(g in seq_len(ng)){
+        par <- zmFits[[g,1]]
+        this.genes <- attr(par, 'genes')
+        stopifnot(length(intersect(genes, this.genes))==ng)
+        ##browser(expr)
+        idx <- cbind(g, match(this.genes, genes), layer )
+        theta[idx] <- par$coef
+    }
+    G <- (theta[,,'G']+t(theta[,,'G']))/2
+    Hdisc <- theta[,,'Hdisc']
+    Hcont <- theta[,,'Hcont']
+    diag(Hcont) <- diag(Hdisc)
+    H <- (Hdisc+Hcont)/2
+    K <- (theta[,,'K']+t(theta[,,'K']))/2
+    list(G=G, H=H, K=K)
 }
