@@ -23,6 +23,8 @@ without <- function(obj, idx){
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
+##' @import nloptr
+##' @importFrom numDeriv jacobian
 ##' @export
 fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, debug=FALSE, ...){
     ## gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
@@ -136,6 +138,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         th0 <- rep(0, ngenes*4-1)
         names(th0) <- parmap(ngenes)
         th0['hbb'] <- th0['kbb'] <- 1
+        th0['gbb'] <- -10
         lb <- rep(-Inf, length(th0))
         lb[names(th0)=='kbb'] <- .001
 
@@ -145,13 +148,23 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
                 return(fit)
             }
 
-            ll <- generatelogLik(y.zif, this.model, returnGrad=FALSE, debug=debug, ...)
-            gr <- generatelogLik(y.zif, this.model, returnGrad=TRUE, debug=debug, ...)
-            oo <- optim(th0, ll, gr, method='BFGS',control=list(fnscale=-1, maxit=4000))
-            fit <- list(coefficients=oo$par[-which(names(oo$par)=='kbb')], jerr=0, lambda=0)
-            structure(fit, nobs=length(y.zif), sigma2=1/oo$par['kbb'], selectedLambda=0)
-        }
+            ll <- generatelogLik(y.zif, this.model, debug=debug, ...)
+            #oo <- optim(th0, ll, gr, method='BFGS',control=list(maxit=4000), hessian=TRUE)
+            lb <- (abs(th0)+1)*-Inf
+            lb['kbb'] <- .001
+            oo2 <- nloptr(th0, ll, opts=list(algorithm='NLOPT_LD_TNEWTON_PRECOND_RESTART', maxeval=200), lb=lb)
+            sol <- setNames(oo2$solution, names(lb))
 
+            gr <- function(th) ll(th)$gradient
+            hess <- jacobian(gr, oo2$sol)
+            Ehess <- eigen(hess)
+            fit <- list(coefficients=sol, jerr=oo2$status, lambda=0, hess=hess)
+            structure(fit, nobs=length(y.zif), sigma2=1/sol['kbb'], selectedLambda=0,
+                      genes=c(this.gene, colnames(this.model), #gbb, gba
+                          this.gene, colnames(this.model), #hbb, hab
+                          colnames(this.model), colnames(this.model),#hba, kba   
+                          this.gene ))  #kbb
+        }
     }
 
 
