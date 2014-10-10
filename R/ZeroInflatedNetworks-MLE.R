@@ -9,7 +9,7 @@ coordmap <- function(p){
 }
 
 ## the negative of the log-likelihood!
-generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames=NULL){
+generatelogLik <- function(y, x, lambda=0, debug=FALSE, xNames=NULL){
     TOL <- .001
     LARGE <- 500
     p <- ncol(x)+1
@@ -46,9 +46,8 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
     ## own coordinate -> cmap==1 
     cmap <- coordmap(p)
 
-    bookkeeping <- function(theta){
-        frame <- sys.frame(-1)
-
+    llAndGrad <- function(theta){
+        ## Common stuff and bookkeeping
         gBA <- as.matrix(theta[par=='gba'])
         hAB <- as.matrix(theta[par=='hab'])
         hBA <- as.matrix(theta[par=='hba'])
@@ -72,22 +71,8 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
 
         ## prevent scaling problems
         cumulant <-ifelse(gpart + cpart>LARGE, gpart+cpart, log(1+ exp(gpart+cpart)))
-        assign('gBA', gBA, pos=frame)
-        assign('hAB', hAB, pos=frame)
-        assign('hBA', hBA, pos=frame)
-        assign('kBA', kBA, pos=frame)
-        assign('g0', g0, pos=frame)
-        assign('h0', h0, pos=frame)
-        assign('k0', k0, pos=frame)
-        assign('gpart', gpart, pos=frame)
-        assign('hpart', hpart, pos=frame)
-        assign('cpart', cpart, pos=frame)
-        assign('cumulant', cumulant, pos=frame)
-        assign('lgroup', lgroup, pos=frame)
-    }
 
-    ll <- function(theta){
-        bookkeeping(theta)
+        ## Log-likelihood
         ## Note--could be a decent way to speed this up for sparse y
         loglik <- yI*gpart+y*hpart-.5*y^2*k0-cumulant
         sloglik <- sum(loglik)
@@ -96,13 +81,11 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
         cat(theta, ': ')
         cat(sloglik, '\n')
     }
-        negpenll <- -loglik-sum(lgroup)
-        ifelse(is.finite(negpenll), negpenll, Inf)
-    }
+        negpenll <- -sloglik-sum(lgroup)
+        negpenll <- ifelse(is.finite(negpenll), negpenll, Inf)
 
-    grad <- function(theta){
-        bookkeeping(theta)
-        ## sub parts to gradient
+        ## Gradient:
+        ## sub parts
         hpart.expand <- do.call(cbind, rep(list(hpart), p-1))
         dC <- list(hbb=hpart/k0,
                    hba=xI*hpart.expand/k0,
@@ -137,12 +120,10 @@ generatelogLik <- function(y, x, lambda=0, debug=FALSE, returnGrad=FALSE, xNames
         if(debug){
             cat('grad:', sgrad, '\n')
         }
-        -sgrad
+        list(objective=negpenll, gradient=-sgrad)
     }
 
-    
-    
-    if(returnGrad) grad else ll
+    llAndGrad
 }
 
 LAYERMAP <- c('gbb'='G', 'gba'='G',
