@@ -139,25 +139,23 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         names(th0) <- parmap(ngenes)
         th0['hbb'] <- th0['kbb'] <- 1
         th0['gbb'] <- -10
-        lb <- rep(-Inf, length(th0))
-        lb[names(th0)=='kbb'] <- .001
+        lb <- setNames(rep(-Inf, length(th0)), names(th0))
+        lb['kbb'] <- .001
+        ## th0['gbb'] <- -13
+        ## th0['hbb'] <- 5
 
         glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
             if(j=='dichotomous'){
                 fit <- fits[[this.gene, 'continuous']]
                 return(fit)
             }
-
             ll <- generatelogLik(y.zif, this.model, debug=debug, ...)
             #oo <- optim(th0, ll, gr, method='BFGS',control=list(maxit=4000), hessian=TRUE)
-            lb <- (abs(th0)+1)*-Inf
-            lb['kbb'] <- .001
-            oo2 <- nloptr(th0, ll, opts=list(algorithm='NLOPT_LD_TNEWTON_PRECOND_RESTART', maxeval=200), lb=lb)
+            oo2 <- nloptr(th0, ll, opts=list(algorithm='NLOPT_LD_TNEWTON_PRECOND_RESTART', maxeval=200, check_derivatives=debug, check_derivatives_print='errors'), lb=lb)
             sol <- setNames(oo2$solution, names(lb))
 
             gr <- function(th) ll(th)$gradient
             hess <- jacobian(gr, oo2$sol)
-            Ehess <- eigen(hess)
             fit <- list(coefficients=sol, jerr=oo2$status, lambda=0, hess=hess)
             structure(fit, nobs=length(y.zif), sigma2=1/sol['kbb'], selectedLambda=0,
                       genes=c(this.gene, colnames(this.model), #gbb, gba
@@ -179,8 +177,8 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             y.zif <- exprs(sub)[,i]
             ## remove response gene from design
             this.gene.idx <- i
-            this.model <- model.mat[,-this.gene.idx-additive.dim]
-            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim]
+            this.model <- model.mat[,-this.gene.idx-additive.dim,drop=FALSE]
+            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim,drop=FALSE]
             if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
             this.fit <- tryCatch({
                 glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)
