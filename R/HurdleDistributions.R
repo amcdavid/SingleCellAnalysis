@@ -40,6 +40,21 @@ rCondHurdle210 <- function(x, i, G, H, K, tol=5e-2){
     y*yI
 }
 
+.rCondHurdle210 <- function(x, gbb, gab, hbb, hab, hba, kbb, kba, unif, norm, tol=5e-2){
+    ## assuming we're all zeroed out
+    xI <- (abs(x)>tol)*1
+    x <- xI*x
+    Gba <- gbb+2*crossprod(gab, xI)+crossprod(hab, x)
+    Hba <- hbb+crossprod(xI, hba)-crossprod(x, kba)
+    Kba <- kbb
+
+    logitP <- Gba-.5*log(Kba/(2*pi))+Hba^2/(2*Kba)
+    mu <- Hba/Kba
+    yI <- unif<expit(logitP)
+    y <- norm/sqrt(Kba)+mu
+    y*yI
+}
+
 rv <- function(x){
     dim(x) <- c(1, length(x))
     x
@@ -58,8 +73,24 @@ rGibbsHurdle <- function(G, H, K, Nt, burnin=floor(Nt/2), tol=5e-2){
             ## and coordinates of these samples
             notpidx <- ((notp-1) %% p)+1
             samp[i] <- rCondHurdle210(rv(samp[notp]), i=notpidx, G=G, H=H, K=K, tol=tol)
+            if(is.na(samp[i])) stop("The gibbs sampler has gotten sad.")
             notp <- notp+1
         }
     ## we are in column-major order, but will want to be in row-major for consistency elsewhere
     t(matrix(samp, nrow=p))[-seq_len(burnin),]
+}
+
+addPseudoCounts <- function(rgh){
+    ## (1) At least 3 totally positive counts (so mean and covariance are estimible)
+    ## (2) and every pair of coordinates has full 2x2 contingency table
+    ## (so that binary dependence is estimible)
+    ## Adding another p observations (singly positive) fills the other three cells in the contigency tables
+    colmeans <- apply(rgh, 1, function(x) mean(x[abs(x)>0]))
+    colmeans[is.na(colmeans)] <- 5
+    pos <- matrix(rnorm((3+1)*ncol(rgh)), nrow=ncol(rgh))
+    pos <- pos+colmeans
+    allpos <- pos[,1:3]
+    contigentPos <- pos[,4]
+    contigentPos <- diag(contigentPos)
+    rbind(rgh, t(allpos), t(contigentPos))
 }
