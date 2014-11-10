@@ -132,7 +132,8 @@ LAYERMAP <- c('gbb'='G', 'gba'='G',
 OLAYER <- c(G=1, Hdisc=2, Hcont=3, K=4)
 
 getJoint210 <- function(zmFits){
-    genes <- attr(zmFits, 'genes')
+    s2 <- attr(zmFits, 'sigma2')
+    genes <- which(!is.na(s2[,'dichotomous'])) #genes with errors will be NA                                    
     ng <- length(genes)
     ## Off-diagonal entries are all estimated twice:
     ## Once for A|B and once for B|A
@@ -142,15 +143,18 @@ getJoint210 <- function(zmFits){
     ## (Hdisc=upper tri of B|A, Hcont=lower tri of B|A)
     ## Then average them
     theta <- array(NA, dim=c(ng, ng, 4), #G, Hdisc, Hcont, K
-                   dimnames=list(genes, genes, c('G', 'Hdisc', 'Hcont', 'K')))
+                   dimnames=list(names(genes), names(genes), c('G', 'Hdisc', 'Hcont', 'K')))
     layer <-  OLAYER[LAYERMAP[parmap(ng)]]
-    for(g in seq_len(ng)){
+    for(goodidx in seq_len(ng)){
+        g <- genes[goodidx]             #original index
         par <- zmFits[[g,1]]
         this.genes <- attr(par, 'genes')
-        stopifnot(length(intersect(genes, this.genes))==ng)
+        good.genes.idx <- which(this.genes %in% names(genes))
+        good.genes <- this.genes[good.genes.idx]
+        stopifnot(length(intersect(names(genes), good.genes))==ng)
         ##browser(expr)
-        idx <- cbind(g, match(this.genes, genes), layer )
-        theta[idx] <- par$coef
+        idx <- cbind(goodidx, match(good.genes, names(genes)), layer )
+        theta[idx] <- par$coef[good.genes.idx]
     }
     G <- (theta[,,'G']+t(theta[,,'G']))/2
     Hdisc <- theta[,,'Hdisc']
