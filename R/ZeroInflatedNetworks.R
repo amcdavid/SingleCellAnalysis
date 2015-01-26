@@ -23,8 +23,6 @@ without <- function(obj, idx){
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
 ##' @importFrom glmnet glmnet cv.glmnet
-##' @import nloptr
-##' @importFrom numDeriv jacobian
 ##' @export
 fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, debug=FALSE, ...){
     ## gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
@@ -138,31 +136,22 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         th0 <- rep(0, ngenes*4-1)
         names(th0) <- parmap(ngenes)
         th0['hbb'] <- th0['kbb'] <- 1
-        th0['gbb'] <- -10
-        lb <- setNames(rep(-Inf, length(th0)), names(th0))
-        lb['kbb'] <- .001
-        ## th0['gbb'] <- -13
-        ## th0['hbb'] <- 5
+        lb <- rep(-Inf, length(th0))
+        lb[names(th0)=='kbb'] <- .001
 
         glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
             if(j=='dichotomous'){
                 fit <- fits[[this.gene, 'continuous']]
                 return(fit)
             }
-            ll <- generatelogLik(y.zif, this.model, debug=debug, ...)
-            #oo <- optim(th0, ll, gr, method='BFGS',control=list(maxit=4000), hessian=TRUE)
-            oo2 <- nloptr(th0, ll, opts=list(algorithm='NLOPT_LD_TNEWTON_PRECOND_RESTART', maxeval=200, check_derivatives=debug, check_derivatives_print='errors'), lb=lb)
-            sol <- setNames(oo2$solution, names(lb))
 
-            gr <- function(th) ll(th)$gradient
-            hess <- jacobian(gr, oo2$sol)
-            fit <- list(coefficients=sol, jerr=oo2$status, lambda=0, hess=hess)
-            structure(fit, nobs=length(y.zif), sigma2=1/sol['kbb'], selectedLambda=0,
-                      genes=c(this.gene, colnames(this.model), #gbb, gba
-                          this.gene, colnames(this.model), #hbb, hab
-                          colnames(this.model), colnames(this.model),#hba, kba   
-                          this.gene ))  #kbb
+            ll <- generatelogLik(y.zif, this.model, returnGrad=FALSE, debug=debug, ...)
+            gr <- generatelogLik(y.zif, this.model, returnGrad=TRUE, debug=debug, ...)
+            oo <- optim(th0, ll, gr, method='BFGS',control=list(fnscale=-1, maxit=4000))
+            fit <- list(coefficients=oo$par[-which(names(oo$par)=='kbb')], jerr=0, lambda=0)
+            structure(fit, nobs=length(y.zif), sigma2=1/oo$par['kbb'], selectedLambda=0)
         }
+
     }
 
 
@@ -177,8 +166,8 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             y.zif <- exprs(sub)[,i]
             ## remove response gene from design
             this.gene.idx <- i
-            this.model <- model.mat[,-this.gene.idx-additive.dim,drop=FALSE]
-            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim,drop=FALSE]
+            this.model <- model.mat[,-this.gene.idx-additive.dim]
+            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim]
             if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
             this.fit <- tryCatch({
                 glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)

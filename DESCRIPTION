@@ -28,6 +28,8 @@ Imports:
     Matrix,
     scales,
     nloptr,
-    numDeriv
+    numDeriv,
+    Rcpp (>= 0.11.3)
 Suggests:
     testthat
+LinkingTo: Rcpp
