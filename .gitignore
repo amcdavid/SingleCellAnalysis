@@ -1,5 +1,7 @@
 # History files
 .Rhistory
+*.o
+*.so
 
 # Example code in package build process
 *-Ex.R
