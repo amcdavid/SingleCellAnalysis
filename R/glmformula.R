@@ -59,7 +59,6 @@
 ##' @seealso glmMisclass, getNZdesign, doGLMnet, cv.glmnet
 ##' @export
 ##' @importFrom Matrix cBind
-##' @import glmnet
 ##' @import stringr
 glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuous', 'dichotomous'), pen.scale.interaction=2, precenter=FALSE, prescale=FALSE, addn=NULL, addn.penalty=0, user.mm, alpha=.9, only.mm=FALSE, ...){
   predOpts <-  c('dichotomous', 'continuous', 'interaction', 'user')
@@ -132,7 +131,7 @@ glmSingleCellAssay <- function(sca, comparison, min.freq, predictor=c('continuou
   
   if(only.mm) return(list(mm=mm, resp=resp))
   message('Calling cv.glmnet on ',  ncol(mm), ' predictors and ', nrow(mm), ' cells')
-  fit <- cv.glmnet(mm, resp,  family=fam, alpha=alpha, penalty.factor=pf, ...)
+  fit <- glmnet::cv.glmnet(mm, resp,  family=fam, alpha=alpha, penalty.factor=pf, ...)
   list(cv.fit=fit, mm=mm, response=resp, sca=sca, additive.dim=additive.dim)
 }
 

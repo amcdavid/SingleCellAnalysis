@@ -22,7 +22,6 @@ without <- function(obj, idx){
 ##' @param onlyReturnFitter if TRUE, return an undocumented fitter function that is internally called on each gene/component.
 ##' @param ... passed to cv.glmnet
 ##' @return 2-D list of cv.glmnet objects with attributes
-##' @importFrom glmnet glmnet cv.glmnet
 ##' @export
 fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='zero.inflated', precenter=TRUE, precenter.fun=scale, response='hurdle', modelSelector, onlyReturnFitter=FALSE, debug=FALSE, ...){
     ## gene.predictors <- match.arg(gene.predictors, c('zero.inflated', 'hurdle'))
@@ -69,20 +68,20 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         off <- NA
         ## Gaussian
         if(family=='gaussian' && response %in% 'hurdle'){
-            fit <- glmnet(this.model[y.dichot,], y.real, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            fit <- glmnet::glmnet(this.model[y.dichot,], y.real, family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression2'){
             pf <- c(pf, rep(1, ngenes))
-            fit <- glmnet(cbind(this.model, without(this.model.zero, seq_len(additive.dim)))[y.dichot,], y.real, family=family, standardize=!precenter, penalty.factor=pf, ...)
+            fit <- glmnet::glmnet(cbind(this.model, without(this.model.zero, seq_len(additive.dim)))[y.dichot,], y.real, family=family, standardize=!precenter, penalty.factor=pf, ...)
             nobs <- length(y.real)
         } else if(family=='gaussian' && response == 'cg.regression'){
-            fit <- glmnet(this.model[y.dichot,], y.real-mean(y.real), family=family, penalty.factor=pf, standardize=!precenter, ...)
+            fit <- glmnet::glmnet(this.model[y.dichot,], y.real-mean(y.real), family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.real)
         }else if(family=='gaussian' && response =='zero.inflated'){
-            fit <- glmnet(this.model, y.zif, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            fit <- glmnet::glmnet(this.model, y.zif, family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.zif)
         } else if(family=='binomial' && response == 'hurdle'){
-            fit <- glmnet(this.model, y.dichot, family=family, penalty.factor=pf, standardize=!precenter, ...)
+            fit <- glmnet::glmnet(this.model, y.dichot, family=family, penalty.factor=pf, standardize=!precenter, ...)
             nobs <- length(y.dichot)
         } else if(family=='binomial' && response == 'zero.inflated'){
             fit <- fits[[this.gene, 'continuous']]
@@ -123,7 +122,7 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
                 thisx <- cbind(this.model.zero, without(this.model, seq_len(additive.dim)))
                 pf <- c(pf, rep(1, ngenes))
             }
-            fit <- glmnet(thisx, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
+            fit <- glmnet::glmnet(thisx, y.dichot, family=family, penalty.factor=pf, offset=offt, standardize=!precenter, ...)
         }
         l.idx <- modelSelector(fit, ngenes=ngenes)
         sigma2 <- (1-fit$dev.ratio)*fit$nulldev/nobs
@@ -131,27 +130,47 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
         structure(fit, nobs=nobs, sigma2=sigma2[l.idx], selectedLambda=fit$lambda[l.idx], off=off)
     }
 
-    if(response=='cg.mle'){
-        stopifnot(additive.dim==0)
-        th0 <- rep(0, ngenes*4-1)
-        names(th0) <- parmap(ngenes)
-        th0['hbb'] <- th0['kbb'] <- 1
-        lb <- rep(-Inf, length(th0))
-        lb[names(th0)=='kbb'] <- .001
+    if(response %in% c('cg.mle', 'cg.pen')){
+        ## stopifnot(additive.dim==0)
+        ## th0 <- rep(0, ngenes*4-1)
+        ## names(th0) <- parmap(ngenes)
+        ## th0['hbb'] <- th0['kbb'] <- 1
+        ## lb <- rep(-Inf, length(th0))
+        ## lb[names(th0)=='kbb'] <- .001
 
-        glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
-            if(j=='dichotomous'){
-                fit <- fits[[this.gene, 'continuous']]
-                return(fit)
-            }
+        ## if(response == 'cg.mle'){
+        ##     glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
+        ##         if(j=='dichotomous'){
+        ##             fit <- fits[[this.gene, 'continuous']]
+        ##             return(fit)
+        ##         }
 
-            ll <- generatelogLik(y.zif, this.model, returnGrad=FALSE, debug=debug, ...)
-            gr <- generatelogLik(y.zif, this.model, returnGrad=TRUE, debug=debug, ...)
-            oo <- optim(th0, ll, gr, method='BFGS',control=list(fnscale=-1, maxit=4000))
-            fit <- list(coefficients=oo$par[-which(names(oo$par)=='kbb')], jerr=0, lambda=0)
-            structure(fit, nobs=length(y.zif), sigma2=1/oo$par['kbb'], selectedLambda=0)
-        }
-
+        ##         ll <- generatelogLik(y.zif, this.model, returnGrad=FALSE, debug=debug, ...)
+        ##         gr <- generatelogLik(y.zif, this.model, returnGrad=TRUE, debug=debug, ...)
+        ##         oo <- optim(th0, ll, gr, method='BFGS',control=list(maxit=4000), hessian=TRUE)
+        ##                                 #fit <- list(coefficients=oo$par[-which(names(oo$par)=='kbb')], jerr=0, lambda=0) # delete kbb following other fitting methods
+        ##         fit <- list(coefficients=oo$par, jerr=0, lambda=0, hess=oo$hess)
+        ##         structure(fit, nobs=length(y.zif), sigma2=1/oo$par['kbb'], selectedLambda=0,
+        ##                   genes=c(this.gene, colnames(this.model), #gbb, gba
+        ##                       this.gene, colnames(this.model), #hbb, hab
+        ##                       colnames(this.model), colnames(this.model),#hba, kba   
+        ##                       this.gene ))            
+        ##     }
+        ## } else if(response == 'cg.pen'){
+        ##     glmnetFit <- function(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...){
+        ##         if(j=='dichotomous'){
+        ##             fit <- fits[[this.gene, 'continuous']]
+        ##             return(fit)
+        ##         }
+        ##         prefit <- cgpaths(theta, y.zif, this.model)
+        ##         structure(prefit[1,], nobs=length(y.zif), sigma2=prefit[1,'kbb'], selectedLambda=0,
+        ##                   genes=c(this.gene, colnames(this.model), #gbb, gba
+        ##                       this.gene, colnames(this.model), #hbb, hab
+        ##                       colnames(this.model), colnames(this.model),#hba, kba   
+        ##                       this.gene ))
+        ##     }
+        ## }
+        stop('MLE not implemented until HurdleNormal API is finalized')
     }
 
 
@@ -166,8 +185,8 @@ fitZifNetwork <- function(sc, additive.effects, min.freq=.05, gene.predictors='z
             y.zif <- exprs(sub)[,i]
             ## remove response gene from design
             this.gene.idx <- i
-            this.model <- model.mat[,-this.gene.idx-additive.dim]
-            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim]
+            this.model <- model.mat[,-this.gene.idx-additive.dim, drop=FALSE]
+            this.model.zero <- model.mat.zero[,-this.gene.idx-additive.dim, drop=FALSE]
             if(any(this.gene %in% colnames(this.model))) stop('ruhroh')
             this.fit <- tryCatch({
                 glmnetFit(y.zif, this.gene, this.model, this.model.zero, j, fits, lambda, sigma2, ...)
@@ -205,12 +224,11 @@ bicSelector <- function(fit, ngenes, ebic.lambda=1){
 
 ##' Derive global properties of network fit
 ##'
-##' .. content for \details{} ..
 ##' @param fits \code{fitZifNetwork} object
 ##' @param lc.range optional
 ##' @param ld.range optional
 ##' @param nknots 
-##' @param ebic.lambda lambda penalty for extended Bayesian Info Crit. (Rigel and Drton)
+##' @param ebic.lambda lambda penalty for extended Bayesian Info Crit. (Foygel and Drton)
 ##' @return list with entries \code{fortified}, \code{norm.grid}, \code{native.path}
 ##' fortified and native.path are both data.frames with entries for each primerid, containing statistics of the fit as lambda varies.
 ##' fortified has cartesian product of continuous lambda values and discrete, over the same grid for each gene.
